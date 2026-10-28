@@ -11,17 +11,24 @@ import {
 	TooltipProvider,
 } from "@cloudflare/kumo";
 import { WarningIcon } from "@phosphor-icons/react";
-import { MutationCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+	MutationCache,
+	QueryClient,
+	QueryClientProvider,
+} from "@tanstack/react-query";
 import { forwardRef, useState } from "react";
 import {
 	isRouteErrorResponse,
 	Links,
 	Meta,
 	Outlet,
+	Navigate,
+	useLocation,
 	Link as RouterLink,
 	Scripts,
 	ScrollRestoration,
 } from "react-router";
+import { useMe } from "~/queries/team";
 import { ApiError } from "~/services/api";
 import "./index.css";
 
@@ -33,7 +40,11 @@ function makeQueryClient() {
 				refetchOnWindowFocus: false,
 				retry: (failureCount, error) => {
 					// Don't retry 4xx errors (not found, unauthorized, etc.)
-					if (error instanceof ApiError && error.status >= 400 && error.status < 500) {
+					if (
+						error instanceof ApiError &&
+						error.status >= 400 &&
+						error.status < 500
+					) {
 						return false;
 					}
 					return failureCount < 2;
@@ -118,12 +129,34 @@ export default function App() {
 			<LinkProvider component={KumoLink}>
 				<TooltipProvider>
 					<Toasty>
-						<Outlet />
+						<SessionGate />
 					</Toasty>
 				</TooltipProvider>
 			</LinkProvider>
 		</QueryClientProvider>
 	);
+}
+
+function SessionGate() {
+	const location = useLocation();
+	const publicRoute = [
+		"/login",
+		"/register",
+		"/reset-password",
+		"/setup",
+	].includes(location.pathname);
+	const { data, error, isLoading } = useMe(!publicRoute);
+	if (publicRoute) return <Outlet />;
+	if (isLoading) return <HydrateFallback />;
+	if (error instanceof ApiError && error.status === 401)
+		return <Navigate to="/login" replace />;
+	if (error)
+		return (
+			<p role="alert" className="p-8">
+				{error.message}
+			</p>
+		);
+	return data ? <Outlet /> : <HydrateFallback />;
 }
 
 export function ErrorBoundary({ error }: { error: unknown }) {

@@ -14,10 +14,13 @@ export default function ComposeEmail() {
 		mailboxId: string;
 		folder: string;
 	}>();
-	
+
 	const { isComposeModalOpen, closeComposeModal } = useUIStore();
 
 	const {
+		fromAddress,
+		setFromAddress,
+		sendAddresses,
 		to,
 		setTo,
 		cc,
@@ -47,8 +50,30 @@ export default function ComposeEmail() {
 				<Dialog.Title className="text-lg font-semibold mb-5">
 					{formTitle}
 				</Dialog.Title>
-				<form onSubmit={(e) => handleSend(e, closeComposeModal)} className="space-y-4">
+				<form
+					onSubmit={(e) => handleSend(e, closeComposeModal)}
+					className="space-y-4"
+				>
 					{error && <Banner variant="error" text={error} />}
+					<label className="block text-sm text-kumo-subtle">
+						发件地址
+						<select
+							aria-label="发件地址"
+							className="mt-1 w-full rounded border border-kumo-line bg-kumo-base p-2 text-kumo-default"
+							value={fromAddress}
+							onChange={(e) => setFromAddress(e.target.value)}
+						>
+							{sendAddresses.length ? (
+								sendAddresses.map((a) => (
+									<option key={a} value={a}>
+										{a}
+									</option>
+								))
+							) : (
+								<option value="">暂无可用发件地址</option>
+							)}
+						</select>
+					</label>
 					<div className="flex items-center gap-2">
 						<div className="flex-1">
 							<Input

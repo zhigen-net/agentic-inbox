@@ -1,14 +1,16 @@
 // This fixture is bundled only by runtime.test.ts and is never included in production.
+import production from "../workers/app";
 import { routeAgentRequest, getAgentByName } from "agents";
 import { HTTPException } from "hono/http-exception";
 import { authorizeAgentPath } from "../workers/lib/auth";
 import { MailboxDO } from "../workers/durableObject";
 import { EmailAgent } from "../workers/agent";
+import migration2 from "../migrations/0002_accounts_addresses.sql";
 import migration from "../migrations/0001_team_directory.sql";
 import type { Env } from "../workers/types";
 export { MailboxDO, EmailAgent };
 export default {
-	async fetch(request: Request, env: Env) {
+	async fetch(request: Request, env: Env, ctx: ExecutionContext) {
 		const path = new URL(request.url).pathname;
 		try {
 			if (path === "/setup") {
@@ -18,6 +20,14 @@ export default {
 					.map((x) => x.trim())
 					.filter(Boolean);
 				for (const sql of statements) await env.DIRECTORY.prepare(sql).run();
+				const cleaned = migration2.replace(/--[^\n]*/g, "");
+				const [regular, trigger] = cleaned.split("CREATE TRIGGER");
+				for (const sql of regular
+					.split(";")
+					.map((s) => s.trim())
+					.filter(Boolean))
+					await env.DIRECTORY.prepare(sql).run();
+				await env.DIRECTORY.prepare("CREATE TRIGGER" + trigger).run();
 				await env.DIRECTORY.prepare(
 					"INSERT INTO users (id,email) VALUES ('alice','alice@example.test'), ('bob','bob@example.test')",
 				).run();
@@ -110,6 +120,7 @@ export default {
 				// set-name initialization must remain reachable to trusted internal callers.
 				return Response.json({ initialized: !!agent });
 			}
+			if (path.startsWith("/api/")) return production.fetch(request, env, ctx);
 			const principal = {
 				userId: request.headers.get("x-test-user") || "alice",
 				email: "",

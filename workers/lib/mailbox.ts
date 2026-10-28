@@ -1,3 +1,4 @@
+import { consumeQuota } from "../domain/accounts";
 // Copyright (c) 2026 Cloudflare, Inc.
 // Licensed under the Apache 2.0 license found in the LICENSE file or at:
 //     https://opensource.org/licenses/Apache-2.0
@@ -32,6 +33,11 @@ export const requireMailbox = createMiddleware<MailboxContext>(
 			c.req.method === "GET" || c.req.method === "HEAD" ? "read" : "write",
 		);
 		c.set("mailboxRole", role);
+		if (
+			c.req.method === "POST" &&
+			(/\/emails$/.test(c.req.path) || /\/(reply|forward)$/.test(c.req.path))
+		)
+			await consumeQuota(c.env, c.var.principal, "send");
 
 		// Verify mailbox exists
 		const key = `mailboxes/${mailboxId}.json`;

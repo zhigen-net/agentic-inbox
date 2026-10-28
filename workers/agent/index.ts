@@ -1,3 +1,5 @@
+import { consumeQuota } from "../domain/accounts";
+import { defaultAddress } from "../domain/mailboxes";
 // Copyright (c) 2026 Cloudflare, Inc.
 // Licensed under the Apache 2.0 license found in the LICENSE file or at:
 //     https://opensource.org/licenses/Apache-2.0
@@ -326,6 +328,7 @@ export class EmailAgent extends AIChatAgent<any> {
 	async onChatMessage(onFinish: any) {
 		const env = this.env as Env;
 		const { mailboxId, principal } = await this.assertChatAccess();
+		await consumeQuota(env, principal, "ai");
 		const workersai = createWorkersAI({ binding: env.AI });
 		const tools = createEmailTools(env, mailboxId, principal);
 		const systemPrompt = await getSystemPrompt(env, mailboxId);
@@ -569,7 +572,7 @@ Based on the email content and thread context above, draft a reply using draft_r
 						{
 							id: draftId,
 							subject: reSubject,
-							sender: emailData.mailboxId.toLowerCase(),
+							sender: await defaultAddress(env, emailData.mailboxId),
 							recipient: emailData.sender.toLowerCase(),
 							date: new Date().toISOString(),
 							// verifyDraft may return plain text or HTML depending on its

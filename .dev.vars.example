@@ -6,5 +6,6 @@ TEAM_DOMAIN=https://your-team.cloudflareaccess.com
 # In production, set this with: wrangler secret put ADMIN_EMAILS
 ADMIN_EMAILS=admin@localhost.test
 
-# Local development only; match ADMIN_EMAILS if configured.
-DEV_USER_EMAIL=admin@localhost.test
+
+# New installs/local setup only: generate a random value of at least 32 characters.
+BOOTSTRAP_TOKEN=

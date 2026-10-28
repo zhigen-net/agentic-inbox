@@ -25,11 +25,13 @@ export default function SettingsRoute() {
 	const updateMailboxMutation = useUpdateMailbox();
 
 	const [displayName, setDisplayName] = useState("");
+	const [autoDraft, setAutoDraft] = useState(false);
 	const [agentPrompt, setAgentPrompt] = useState("");
 	const [isSaving, setIsSaving] = useState(false);
 
 	useEffect(() => {
 		if (mailbox) {
+			setAutoDraft(mailbox.settings?.autoDraftEnabled !== false);
 			setDisplayName(mailbox.settings?.fromName || mailbox.name || "");
 			setAgentPrompt(mailbox.settings?.agentSystemPrompt || "");
 		}
@@ -41,6 +43,7 @@ export default function SettingsRoute() {
 		const settings = {
 			...mailbox.settings,
 			fromName: displayName,
+			autoDraftEnabled: autoDraft,
 			agentSystemPrompt: agentPrompt.trim() || undefined,
 		};
 		try {
@@ -95,6 +98,20 @@ export default function SettingsRoute() {
 					</div>
 				</div>
 
+				<div className="rounded-lg border border-kumo-line bg-kumo-base p-5">
+					<label className="flex gap-2">
+						<input
+							type="checkbox"
+							checked={autoDraft}
+							onChange={(e) => setAutoDraft(e.target.checked)}
+						/>
+						收到邮件后自动生成草稿
+					</label>
+					<p className="mt-2 text-xs text-kumo-subtle">
+						新邮箱默认关闭。每邮箱每日最多 25 次；已分配所属用户时也受该用户 AI
+						额度限制。
+					</p>
+				</div>
 				{/* Agent System Prompt */}
 				<div className="rounded-lg border border-kumo-line bg-kumo-base p-5">
 					<div className="flex items-center justify-between mb-4">

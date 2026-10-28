@@ -12,6 +12,13 @@ export function fixture() {
 			"utf8",
 		),
 	);
+	sqlite.exec(
+		readFileSync(
+			new URL("../migrations/0002_accounts_addresses.sql", import.meta.url),
+			"utf8",
+		),
+	);
+
 	function prepare(sql: string) {
 		let values: any[] = [];
 		const statement = {
@@ -162,6 +169,21 @@ export function fixture() {
 			.prepare("INSERT INTO mailboxes (address, name) VALUES (?, ?)")
 			.run(address, address);
 		objects.set(`mailboxes/${address}.json`, "{}");
+		sqlite
+			.prepare(
+				"INSERT OR IGNORE INTO domains(name,receive_enabled,send_enabled) VALUES (?,1,1)",
+			)
+			.run(address.split("@")[1]);
+		sqlite
+			.prepare(
+				"INSERT OR IGNORE INTO mailbox_addresses(address,mailbox_address,domain) VALUES (?,?,?)",
+			)
+			.run(address, address, address.split("@")[1]);
+		sqlite
+			.prepare(
+				"UPDATE mailboxes SET default_address=?,stable_id=? WHERE address=?",
+			)
+			.run(address, crypto.randomUUID(), address);
 		for (const [id, role] of Object.entries(members))
 			sqlite
 				.prepare(

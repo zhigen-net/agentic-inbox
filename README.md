@@ -23,18 +23,15 @@ https://github.com/cloudflare/agentic-inbox/issues/4#issuecomment-4269118513
 
      [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/cloudflare/agentic-inbox)
 
-2. **Configure Cloudflare Access** -- Enable [one-click Cloudflare Access](https://developers.cloudflare.com/changelog/post/2025-10-03-one-click-access-for-workers/) on your Worker under Settings > Domains & Routes. The modal will show your `POLICY_AUD` and `TEAM_DOMAIN` values. `TEAM_DOMAIN` can be either your Access team URL or the full `.../cdn-cgi/access/certs` URL. **You must set these as secrets for your Worker.**
+2. **Optional legacy Cloudflare Access bridge** -- Enable [one-click Cloudflare Access](https://developers.cloudflare.com/changelog/post/2025-10-03-one-click-access-for-workers/) on your Worker under Settings > Domains & Routes. The modal will show your `POLICY_AUD` and `TEAM_DOMAIN` values. `TEAM_DOMAIN` can be either your Access team URL or the full `.../cdn-cgi/access/certs` URL. **You must set these as secrets for your Worker.**
 3. **Set up Email Routing** -- In the Cloudflare dashboard, go to your domain > Email Routing and create a catch-all rule that forwards to this Worker
 4. **Enable Email Service** -- The worker needs the `send_email` binding to send outbound emails. See [Email Service docs](https://developers.cloudflare.com/email-routing/email-workers/send-email-workers/)
 5. **Configure team permissions** -- Follow [the team deployment guide](docs/team-deployment.zh-CN.md) to configure D1 and the bootstrap administrator before the first login.
 6. **Create a mailbox** -- Visit your deployed app and create a mailbox for any address on your domain (e.g. `hello@example.com`)
 
-### Troubleshooting Access
+### Account setup
 
-1. If you see `Invalid or expired Access token`, that usually means `POLICY_AUD` or `TEAM_DOMAIN` secrets are incorrect.
-   * Resolution: [turn Access off and back on for the Worker to get the Access modal again](https://developers.cloudflare.com/changelog/post/2025-10-03-one-click-access-for-workers/), then reset your Worker secrets to the latest `POLICY_AUD` and `TEAM_DOMAIN` values shown there.
-2. If you see `Cloudflare Access must be configured in production`, this application is intentionally enforcing Cloudflare Access so your inbox is not exposed to anyone on the internet.
-   * Resolution: enable Access using [one-click Cloudflare Access for Workers](https://developers.cloudflare.com/changelog/post/2025-10-03-one-click-access-for-workers/), then set the `POLICY_AUD` and `TEAM_DOMAIN` Worker secrets from the modal values.
+Existing Access users can set an independent password in Account settings. A new installation uses a random `BOOTSTRAP_TOKEN` at `/setup`. If the whole Worker is still protected by Access, ordinary users cannot reach registration until its outer policy is adjusted. See [the account guide](docs/accounts-mailboxes.zh-CN.md).
 
 ## Features
 
@@ -49,7 +46,7 @@ https://github.com/cloudflare/agentic-inbox/issues/4#issuecomment-4269118513
 - **Frontend:** React 19, React Router v7, Tailwind CSS, Zustand, TipTap, `@cloudflare/kumo`
 - **Backend:** Hono, Cloudflare Workers, Durable Objects (SQLite), R2, Email Routing
 - **AI Agent:** Cloudflare Agents SDK (`AIChatAgent`), AI SDK v6, Workers AI (`@cf/moonshotai/kimi-k2.5`), `react-markdown` + `remark-gfm`
-- **Auth:** Cloudflare Access JWT validation (required outside local development)
+- **Auth:** Independent password accounts and secure sessions; optional verified Cloudflare Access bridge for existing users
 
 ## Getting Started
 
@@ -80,15 +77,15 @@ For a read-only local resource check, set the target account and `APP_NAME`, the
 - [Email Routing](https://developers.cloudflare.com/email-routing/) enabled for receiving
 - [Email Service](https://developers.cloudflare.com/email-service/) enabled for sending
 - [Workers AI](https://developers.cloudflare.com/workers-ai/) enabled (for the agent)
-- [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/policies/access/) configured for deployed/shared environments (required in production)
+- [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/policies/access/) optional for the legacy login bridge; independent accounts protect the application
 
-This fork adds internal team permissions. Administrators invite users and assign Editor or Viewer access to individual mailboxes, including shared mailboxes. API, AI Agent and MCP operations enforce the same grants. Cloudflare Access authenticates users; a D1 directory authorizes access. Uninvited users and service tokens cannot access mailboxes.
+This fork provides independent user accounts, invitation or approval registration, user management, mailbox assignment and self-service creation with domain permissions and quotas. When creating a mailbox, select multiple domains to generate same-prefix addresses sharing one inbox. Mailbox switching, sender selection, address activation and domain management are available in the app.
 
-**Deploy like CRM-Lite:** connect the repository through Cloudflare Workers Builds, leave Build command empty and set Deploy command to `npm run cf:deploy`. During the current development phase, feature PRs may merge directly into `main` to deploy the existing Worker. `dev` remains optional for a future isolated test environment. Disable preview builds. The deployment script reuses existing storage, provisions missing D1/R2 resources, builds the app, applies migrations and deploys with `--keep-vars`. No GitHub deployment secrets or manual database IDs are needed.
+**Existing admins:** keep using the verified Access login, open Account settings and set an independent password first. After verifying password login, adjust the outer Cloudflare Access policy to let other users register and sign in directly. Deployment does not remove that policy automatically. New installations can initialize the configured admin using a random `BOOTSTRAP_TOKEN` at `/setup`.
 
-Provide `POLICY_AUD`, `TEAM_DOMAIN` and `ADMIN_EMAILS` once as Worker Secrets or Builds secrets. Existing secrets are preserved. After the first upgrade, import legacy mailboxes from **Team administration**. Existing Mailbox Durable Objects and R2 attachments stay in place.
+**Deploy like CRM-Lite:** connect Cloudflare Workers Builds, leave Build command empty and set Deploy command to `npm run cf:deploy`. During development, feature PRs may merge directly into `main`. Disable preview builds. The script reuses storage, provisions missing resources, applies additive migrations and deploys with `--keep-vars`.
 
-See [内部团队版 Workers Builds 部署](docs/team-deployment.zh-CN.md) for setup, permissions, multi-domain configuration, MCP compatibility and rollback steps. The original deploy button alone does not complete the Access/team setup.
+Existing DO and R2 mappings stay unchanged. Legacy mailbox directories are automatically reconciled so old mailboxes remain visible. See [独立账号与多域名邮箱](docs/accounts-mailboxes.zh-CN.md) and [Workers Builds 部署](docs/team-deployment.zh-CN.md) for account setup, multi-address behavior and upgrade instructions.
 
 ## Architecture
 

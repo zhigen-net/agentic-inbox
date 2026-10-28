@@ -11,6 +11,7 @@ export interface Env extends Omit<
 	DIRECTORY: D1Database;
 	ADMIN_EMAILS: string;
 	DEV_USER_EMAIL?: string;
+	BOOTSTRAP_TOKEN?: string;
 	POLICY_AUD: string;
 	TEAM_DOMAIN: string;
 }

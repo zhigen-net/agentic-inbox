@@ -18,7 +18,7 @@ import { useMemo, useState } from "react";
 import { NavLink, useNavigate, useParams } from "react-router";
 import { Folders, SYSTEM_FOLDER_IDS } from "shared/folders";
 import { useCreateFolder, useFolders } from "~/queries/folders";
-import { useMailbox } from "~/queries/mailboxes";
+import { useMailboxes, useMailbox } from "~/queries/mailboxes";
 import { useUIStore } from "~/hooks/useUIStore";
 
 const FOLDER_ICONS: Record<string, React.ReactNode> = {
@@ -76,6 +76,7 @@ function FolderLink({
 export default function Sidebar() {
 	const { mailboxId } = useParams<{ mailboxId: string }>();
 	const navigate = useNavigate();
+	const { data: availableMailboxes = [] } = useMailboxes();
 	const { data: folders = [] } = useFolders(mailboxId);
 	const createFolderMutation = useCreateFolder();
 	const { startCompose, closeSidebar } = useUIStore();
@@ -149,6 +150,27 @@ export default function Sidebar() {
 				</div>
 			</div>
 
+			<div className="px-4 py-2">
+				<label className="text-xs text-kumo-subtle">
+					切换邮箱
+					<select
+						aria-label="切换邮箱"
+						className="mt-1 w-full rounded border border-kumo-line bg-kumo-base p-2 text-sm text-kumo-default"
+						value={mailboxId || ""}
+						onChange={(e) => {
+							navigate(`/mailbox/${encodeURIComponent(e.target.value)}`);
+							closeSidebar();
+						}}
+					>
+						{availableMailboxes.map((m) => (
+							<option key={m.id} value={m.id}>
+								{m.name} · {m.email}
+								{m.unreadCount ? ` · ${m.unreadCount} 未读` : ""}
+							</option>
+						))}
+					</select>
+				</label>
+			</div>
 			{/* Compose */}
 			{canWrite && (
 				<div className="px-3 py-3">

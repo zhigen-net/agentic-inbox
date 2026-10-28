@@ -3,7 +3,11 @@
 //     https://opensource.org/licenses/Apache-2.0
 
 import { Banner, Button, Input } from "@cloudflare/kumo";
-import { FloppyDiskIcon, PaperPlaneTiltIcon, XIcon } from "@phosphor-icons/react";
+import {
+	FloppyDiskIcon,
+	PaperPlaneTiltIcon,
+	XIcon,
+} from "@phosphor-icons/react";
 import { useParams } from "react-router";
 import { useComposeForm } from "~/hooks/useComposeForm";
 import RichTextEditor from "./RichTextEditor";
@@ -15,6 +19,9 @@ export default function ComposePanel() {
 	}>();
 
 	const {
+		fromAddress,
+		setFromAddress,
+		sendAddresses,
 		to,
 		setTo,
 		cc,
@@ -62,6 +69,25 @@ export default function ComposePanel() {
 			>
 				<div className="p-4 md:p-6 space-y-4">
 					{error && <Banner variant="error" text={error} />}
+					<label className="block text-sm text-kumo-subtle">
+						发件地址
+						<select
+							aria-label="发件地址"
+							className="mt-1 w-full rounded border border-kumo-line bg-kumo-base p-2 text-kumo-default"
+							value={fromAddress}
+							onChange={(e) => setFromAddress(e.target.value)}
+						>
+							{sendAddresses.length ? (
+								sendAddresses.map((a) => (
+									<option key={a} value={a}>
+										{a}
+									</option>
+								))
+							) : (
+								<option value="">暂无可用发件地址</option>
+							)}
+						</select>
+					</label>
 
 					<div className="space-y-3">
 						<div className="flex items-center gap-2">
@@ -141,17 +167,20 @@ export default function ComposePanel() {
 					</div>
 
 					<div className="border border-kumo-line rounded-md overflow-hidden bg-kumo-base">
-						<RichTextEditor
-							value={body}
-							onChange={setBody}
-						/>
+						<RichTextEditor value={body} onChange={setBody} />
 					</div>
 				</div>
 
 				{/* Footer actions */}
 				<div className="mt-auto px-4 py-3 border-t border-kumo-line bg-kumo-fill/30 shrink-0 md:px-6">
 					<div className="flex items-center justify-between">
-						<Button type="button" variant="ghost" size="sm" onClick={closeCompose} disabled={isSending}>
+						<Button
+							type="button"
+							variant="ghost"
+							size="sm"
+							onClick={closeCompose}
+							disabled={isSending}
+						>
 							Discard
 						</Button>
 						<div className="flex items-center gap-2">

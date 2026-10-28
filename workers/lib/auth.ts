@@ -10,6 +10,11 @@ export interface TeamUser {
 	email: string;
 	role: "admin" | "member";
 	active: number;
+	status: string;
+	can_create_mailboxes: number;
+	mailbox_limit: number;
+	send_limit: number;
+	ai_limit: number;
 	access_issuer?: string | null;
 	access_subject?: string | null;
 }
@@ -103,7 +108,7 @@ export async function currentUser(
 ): Promise<TeamUser> {
 	const user = await directory(env)
 		.prepare(
-			"SELECT id, email, role, active FROM users WHERE id = ? AND active = 1",
+			"SELECT id, email, role, active, status, can_create_mailboxes, mailbox_limit, send_limit, ai_limit FROM users WHERE id = ? AND active = 1 AND status = 'approved'",
 		)
 		.bind(principal.userId)
 		.first<TeamUser>();
@@ -149,10 +154,6 @@ export async function authorizeMailbox(
 		throw new HTTPException(404, {
 			message: "Mailbox not found or not assigned to you",
 		});
-	if (action === "write" && !isAllowedAddress(env, address.toLowerCase()))
-		throw new HTTPException(403, {
-			message: "This address is no longer enabled for sending or editing",
-		});
 	if (!permits(role, action))
 		throw new HTTPException(403, {
 			message: "This mailbox is read-only or requires administrator permission",
@@ -161,22 +162,33 @@ export async function authorizeMailbox(
 }
 export async function visibleMailboxes(env: Env, principal: Principal) {
 	const user = await currentUser(env, principal);
+	const { ensureLegacyDirectory, mailboxAddresses } =
+		await import("../domain/mailboxes");
+	if (user.role === "admin") await ensureLegacyDirectory(env);
 	const result =
 		user.role === "admin"
 			? await directory(env)
 					.prepare(
-						"SELECT address AS id, address AS email, name, 'admin' AS role FROM mailboxes WHERE active = 1 ORDER BY address",
+						"SELECT address AS id, stable_id AS stableId, COALESCE(default_address,address) AS email, name, owner_id AS ownerId, 'admin' AS role FROM mailboxes WHERE active=1 ORDER BY name",
 					)
 					.all()
 			: await directory(env)
 					.prepare(
-						`SELECT m.address AS id, m.address AS email, m.name, mm.role
-      FROM mailboxes m JOIN mailbox_members mm ON mm.mailbox_address = m.address
-      WHERE mm.user_id = ? AND m.active = 1 ORDER BY m.address`,
+						`SELECT m.address AS id,m.stable_id AS stableId,COALESCE(m.default_address,m.address) AS email,m.name,m.owner_id AS ownerId,mm.role FROM mailboxes m JOIN mailbox_members mm ON mm.mailbox_address=m.address WHERE mm.user_id=? AND m.active=1 ORDER BY m.name`,
 					)
 					.bind(user.id)
 					.all();
-	return result.results;
+	return Promise.all(
+		result.results.map(async (m: any) => ({
+			...m,
+			addresses: await mailboxAddresses(env, m.id),
+			unreadCount: (
+				await env.MAILBOX.get(env.MAILBOX.idFromName(m.id)).getFolders()
+			)
+				.filter((f: any) => f.id === "inbox")
+				.reduce((sum: number, f: any) => sum + Number(f.unreadCount || 0), 0),
+		})),
+	);
 }
 export function chatIdentity(name: string): {
 	principal: Principal;

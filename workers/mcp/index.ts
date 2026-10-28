@@ -1,3 +1,4 @@
+import { consumeQuota } from "../domain/accounts";
 // Copyright (c) 2026 Cloudflare, Inc.
 // Licensed under the Apache 2.0 license found in the LICENSE file or at:
 //     https://opensource.org/licenses/Apache-2.0
@@ -213,6 +214,7 @@ export function createMCPServer(env: Env, principal: Principal) {
 		async ({ mailboxId, originalEmailId, to, subject, bodyHtml }) => {
 			const denied = await verifyMailbox(mailboxId, "write");
 			if (denied) return denied;
+			await consumeQuota(env, principal, "ai");
 			const result = await toolDraftReply(env, mailboxId, {
 				originalEmailId,
 				to,
@@ -249,6 +251,7 @@ export function createMCPServer(env: Env, principal: Principal) {
 		async ({ mailboxId, to, subject, bodyHtml, in_reply_to, thread_id }) => {
 			const denied = await verifyMailbox(mailboxId, "write");
 			if (denied) return denied;
+			await consumeQuota(env, principal, "ai");
 			const result = await toolDraftEmail(env, mailboxId, {
 				to: to || "",
 				subject,
@@ -285,6 +288,7 @@ export function createMCPServer(env: Env, principal: Principal) {
 		async ({ mailboxId, draftId, to, subject, bodyHtml }) => {
 			const denied = await verifyMailbox(mailboxId, "write");
 			if (denied) return denied;
+			await consumeQuota(env, principal, "ai");
 			const result = await toolUpdateDraft(env, mailboxId, {
 				draftId,
 				to,
@@ -336,6 +340,8 @@ export function createMCPServer(env: Env, principal: Principal) {
 		async ({ mailboxId, originalEmailId, to, subject, bodyHtml }) => {
 			const denied = await verifyMailbox(mailboxId, "write");
 			if (denied) return denied;
+			await consumeQuota(env, principal, "ai");
+			await consumeQuota(env, principal, "send");
 			const result = await toolSendReply(env, mailboxId, {
 				originalEmailId,
 				to,
@@ -380,6 +386,8 @@ export function createMCPServer(env: Env, principal: Principal) {
 		async ({ mailboxId, to, subject, bodyHtml }) => {
 			const denied = await verifyMailbox(mailboxId, "write");
 			if (denied) return denied;
+			await consumeQuota(env, principal, "ai");
+			await consumeQuota(env, principal, "send");
 			const result = await toolSendEmail(env, mailboxId, {
 				to,
 				subject,
