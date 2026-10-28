@@ -20,11 +20,12 @@
 	"scripts": {
 		"build": "react-router build",
 		"cf-typegen": "wrangler types",
-		"deploy": "npm run build && wrangler deploy",
+		"deploy": "npm run cf:deploy",
 		"dev": "react-router dev",
 		"preview": "npm run build && vite preview",
 		"typecheck": "npm run cf-typegen && react-router typegen && tsc -b",
-		"test": "tsx --test tests/*.test.ts"
+		"test": "tsx --test tests/*.test.ts",
+		"cf:deploy": "bash scripts/cf-deploy.sh"
 	},
 	"dependencies": {
 		"@cloudflare/ai-chat": "^0.1.8",
@@ -97,10 +98,12 @@
 		"@types/react": "^19.1.2",
 		"@types/react-dom": "^19.1.2",
 		"esbuild": "0.25.12",
+		"jsonc-parser": "3.3.1",
 		"miniflare": "4.20260312.1",
 		"tailwindcss": "^4.1.4",
 		"tsx": "^4.23.15",
 		"typescript": "^5.8.3",
+		"undici": "7.18.2",
 		"vite": "^6.3.3",
 		"vite-tsconfig-paths": "^5.1.4",
 		"wrangler": "^4.74.0"

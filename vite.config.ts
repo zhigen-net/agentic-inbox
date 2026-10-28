@@ -9,10 +9,13 @@ import { defineConfig } from "vite";
 import tsconfigPaths from "vite-tsconfig-paths";
 
 export default defineConfig({
-  plugins: [
-    cloudflare({ viteEnvironment: { name: "ssr" } }),
-    tailwindcss(),
-    reactRouter(),
-    tsconfigPaths(),
-  ],
+	plugins: [
+		cloudflare({
+			configPath: process.env.INBOX_DEPLOY_CONFIG,
+			viteEnvironment: { name: "ssr" },
+		}),
+		tailwindcss(),
+		reactRouter(),
+		tsconfigPaths(),
+	],
 });

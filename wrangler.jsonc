@@ -1,6 +1,6 @@
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
-	"name": "agentic-inbox",
+	"name": "placeholder-worker",
 	"compatibility_date": "2025-11-28",
 	"main": "./workers/app.ts",
 	"observability": {
@@ -18,7 +18,7 @@
 	},
 	"d1_databases": [{
 		"binding": "DIRECTORY",
-		"database_name": "agentic-inbox-directory",
+		"database_name": "placeholder-directory",
 		"database_id": "00000000-0000-0000-0000-000000000000",
 		"migrations_dir": "migrations"
 	}],
@@ -31,8 +31,8 @@
 	"r2_buckets": [
 		{
 			"binding": "BUCKET",
-			"bucket_name": "agentic-inbox",
-			"preview_bucket_name": "agentic-inbox"
+			"bucket_name": "placeholder-store",
+			"preview_bucket_name": "placeholder-store"
 		}
 	],
 	"ai": {

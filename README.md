@@ -62,13 +62,17 @@ npm run dev
 ### Configuration
 
 1. Set your domain in `wrangler.jsonc`
-2. Create an R2 bucket named `agentic-inbox`: `wrangler r2 bucket create agentic-inbox`
+2. Follow the Workers Builds guide below; the deployment script provisions or reuses storage automatically.
 
 ### Deploy
 
+Configure Cloudflare Workers Builds with the deploy command:
+
 ```bash
-npm run deploy
+npm run cf:deploy
 ```
+
+For a read-only local resource check, set the target account and `APP_NAME`, then run `npm run cf:deploy -- --plan`.
 
 ## Prerequisites
 
@@ -80,9 +84,11 @@ npm run deploy
 
 This fork adds internal team permissions. Administrators invite users and assign Editor or Viewer access to individual mailboxes, including shared mailboxes. API, AI Agent and MCP operations enforce the same grants. Cloudflare Access authenticates users; a D1 directory authorizes access. Uninvited users and service tokens cannot access mailboxes.
 
-**Before upgrading an existing deployment:** create/bind the D1 `DIRECTORY`, apply `migrations/`, set `ADMIN_EMAILS` to the first administrator's Access login email, deploy, and import existing mailboxes from **Team administration**. The checked-in D1 ID is a placeholder and must be replaced before production deployment. Existing Mailbox Durable Objects and R2 attachments stay in place.
+**Deploy like CRM-Lite:** connect the repository through Cloudflare Workers Builds, leave Build command empty and set Deploy command to `npm run cf:deploy`. `dev` deploys to an isolated test Worker; promote `dev` to `main` for production. Disable preview builds. The deployment script reuses existing storage, provisions missing D1/R2 resources, builds the app, applies migrations and deploys with `--keep-vars`. No GitHub deployment secrets or manual database IDs are needed.
 
-See [内部团队版部署与迁移](docs/team-deployment.zh-CN.md) for the complete upgrade, multi-domain configuration, MCP compatibility and rollback steps. The original deploy button alone does not complete this fork's setup.
+Provide `POLICY_AUD`, `TEAM_DOMAIN` and `ADMIN_EMAILS` once as Worker Secrets or Builds secrets. Existing secrets are preserved. After the first upgrade, import legacy mailboxes from **Team administration**. Existing Mailbox Durable Objects and R2 attachments stay in place.
+
+See [内部团队版 Workers Builds 部署](docs/team-deployment.zh-CN.md) for setup, permissions, multi-domain configuration, MCP compatibility and rollback steps. The original deploy button alone does not complete the Access/team setup.
 
 ## Architecture
 

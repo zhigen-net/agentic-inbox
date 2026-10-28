@@ -1,105 +1,93 @@
-# 内部团队版部署与迁移
+# 内部团队版：Workers Builds 部署
 
-该版本保留原有的每邮箱 Durable Object、邮件数据和 R2 对象；新增 D1 存储用户、邮箱目录和授权关系。生产环境必须同时通过 Cloudflare Access 身份验证和应用账户检查。
+本项目沿用 CRM-Lite 的部署方式：Cloudflare 连接 GitHub，push 后由 **Workers Builds** 执行 `npm run cf:deploy`。GitHub Actions 仅检查代码，不负责部署，也不需要 GitHub Secrets。
 
-## 权限
+## 固定环境和发布流程
 
-| 身份              | 权限                                                      |
-| ----------------- | --------------------------------------------------------- |
-| 团队管理员        | 邀请/停用成员、分配邮箱、修改邮箱设置、访问所有启用的邮箱 |
-| 邮箱 Editor       | 阅读、搜索、收发信、草稿、文件夹、标记和删除邮件          |
-| 邮箱 Viewer       | 阅读、搜索、下载附件；不能改动邮件或发信                  |
-| 未邀请/已停用成员 | 无法进入应用                                              |
+| 环境 | Git 分支 | Worker                          |
+| ---- | -------- | ------------------------------- |
+| 测试 | `dev`    | `agentic-inbox-dev`（建议名称） |
+| 生产 | `main`   | 已有 `agentic-inbox`            |
 
-同一个邮箱分配给多名成员就是共享邮箱。已读状态、星标、文件夹和草稿由成员共享。AI 对话按 `用户ID~邮箱地址` 分离；成员不能读取其他人的 AI 对话。原有邮箱级 Agent 数据保留，收信自动草稿继续在独立的邮箱级 Agent 中运行，生成的草稿显示在共享草稿箱。
+功能分支先开 PR 到 `dev` → 测试环境自动部署 → 验证通过后由 `dev` 开 PR 到 `main` → 生产自动部署。不要把功能分支直接合入生产。
 
-## 上线前
+每个 Worker 都必须关闭 **Preview Builds / Preview branches**；这与 workers.dev 的版本预览开关不是同一项设置。测试环境使用独立的 D1、R2 和 DO，不接入生产邮件投递。
 
-1. 确认实际 Cloudflare 账户、Worker 名称、生产地址，以及构建是否由 GitHub 推送自动触发。不要仅依据仓库名称推断部署目标。
-2. 导出现有 Worker 配置，记录 R2 桶、DO 绑定/命名空间和 Access 的 `TEAM_DOMAIN`、`POLICY_AUD`，并按现有备份流程备份重要邮件。不要把密钥写入 Git。
-3. 保留 `MAILBOX`、`EMAIL_AGENT`、`EMAIL_MCP` 的名称和现有迁移；不要重建 R2 桶或 DO 命名空间。此版本没有修改它们的存储标识。
-4. 安排一次短暂维护窗口：新版在 D1 初始化和旧邮箱导入完成前不会向成员展示邮箱。
+## 每个环境一次的 Cloudflare 配置
 
-## 创建目录数据库
+打开已有 Worker 的 **Settings → Build → Connect**（新环境选择 Import a repository），按以下设置连接仓库：
 
-以下命令必须指向正确的 Cloudflare 账户：
+| 设置项            | 值                                              |
+| ----------------- | ----------------------------------------------- |
+| Repository        | `zhigen-net/agentic-inbox`                      |
+| Production branch | 测试 Worker 为 `dev`，生产 Worker 为 `main`     |
+| Build command     | 留空                                            |
+| Deploy command    | `npm run cf:deploy`                             |
+| Root directory    | `/`                                             |
+| API token         | 选择能访问目标账户 Workers、D1、R2 的自建 Token |
+| Preview Builds    | 关闭                                            |
+
+在 Build variables 中设置 `NODE_VERSION=24`。脚本要求 `CLOUDFLARE_ACCOUNT_ID` 与部署账户一致；如果构建环境没有自动提供，将其作为构建变量填写。Workers Builds 提供 `CLOUDFLARE_API_TOKEN` 和 `WRANGLER_CI_OVERRIDE_NAME`，不要把 Token 写入 Git。
+
+部署 Token 权限：Account Settings Read、Workers Scripts Edit、Workers R2 Storage Edit、D1 Edit，以及 Wrangler 查询账户身份所需的 User Details Read / Memberships Read。Workers AI 和 Email Service 仍需在对应账户启用。默认自动生成的 Builds Token 可能缺少 D1 权限，应选择自建 Token。
+
+## 首次发布的 Access 与管理员
+
+本应用使用 Cloudflare Access，不能像 CRM 的密码登录那样自动生成管理员密码。以下配置需要提供一次：
+
+| Secret         | 内容                                       |
+| -------------- | ------------------------------------------ |
+| `POLICY_AUD`   | 此 Worker 的 Access 应用 audience          |
+| `TEAM_DOMAIN`  | Access team URL 或完整 certs URL           |
+| `ADMIN_EMAILS` | 首位管理员的 Access 登录邮箱，支持逗号分隔 |
+
+可在 Worker 的 Variables & Secrets 中设置，也可以在 Workers Builds 的构建 Secrets 中提供。部署脚本只把线上缺失的 Secret 通过部署请求初始化；已有 Secret 永不覆盖或轮换。构建日志不会输出 Secret 的值。首位管理员邮箱不要提交到公开仓库。
+
+已有生产 Worker 的 `POLICY_AUD` / `TEAM_DOMAIN` 会沿用，只需补上 `ADMIN_EMAILS`。测试 Worker 应配置自己的 Access 应用。缺少必要 Secret 时脚本停止，不会发布一个不可登录的版本；配置后在 Builds 中重试。
+
+普通成员需要管理员在 Team administration 中邀请，并且也应被 Access 策略允许。邀请不发送邮件，成员需使用同一个受信任的 Access 邮箱登录；首次登录后绑定已验证的 `issuer + sub`。
+
+## 每次自动部署会做什么
+
+1. 使用 Workers Builds 提供的 Worker 名和目标账户，读取现有绑定。
+2. 沿用现有 R2 `BUCKET` 和 D1 `DIRECTORY`。新环境自动创建 `<Worker名>-store` 与 `<Worker名>-directory`；现有 `agentic-inbox` 的桶仍是原来的 `agentic-inbox`。
+3. 生成临时 `wrangler.deploy.json`，自动填写数据库 ID，不修改仓库配置。
+4. 构建 React Router 前后端，生成 `build/server/wrangler.json`。
+5. 执行 D1 迁移；迁移失败则不发布。
+6. 发布 Worker 与静态资源，使用 `--keep-vars` 保留控制台变量，并仅初始化缺失 Secret。
+7. 清理临时配置和 Secret 文件。
+
+不需要手动创建 D1、抄写数据库 ID，也不需要在 GitHub 配置 Token。`wrangler.jsonc` 中的资源名和全零 D1 ID 始终是占位符。
+
+## 域名和旧邮件
+
+- 原有 Worker 的 `DOMAINS`、`EMAIL_ADDRESSES` 及其它普通变量会保留。可在控制台将 `DOMAINS` 设置为逗号分隔的域名。
+- 新环境可通过构建变量 `INBOX_DOMAINS` 设置域名；设置时会明确覆盖该环境的 `DOMAINS`。
+- 每个正式收信域名仍需单独配置 Email Routing/DNS，转发到生产 Worker。发信域名需单独完成 Email Service 验证。
+- 既有 Mailbox DO、R2 邮件附件和邮箱设置保持原位，不会为生产环境新建替代桶。
+- 首次升级后，管理员登录 → **Team administration → Import existing mailboxes**，将原邮箱接入新权限目录。导入按页执行，可重复运行，不会恢复已停用邮箱。
+- 管理员访问全部启用邮箱。给成员分配 Editor 或 Viewer；一个邮箱授权多人就是共享邮箱。
+
+| 邮箱角色 | 能力                                       |
+| -------- | ------------------------------------------ |
+| Editor   | 阅读、搜索、收发信、草稿、文件夹及邮件整理 |
+| Viewer   | 阅读、搜索、下载附件；不能修改邮件或发信   |
+
+只有管理员能修改邮箱设置和授权。共享邮箱的已读状态、星标、文件夹和草稿共享；AI 对话按用户与邮箱分离。自动草稿由独立的邮箱级 Agent 执行，草稿保存在邮箱中。旧邮箱级对话数据保留。
+
+停用邮箱会拒收新邮件并撤销成员授权，但保留邮件、设置和附件。管理员可以恢复，随后重新分配成员。
+
+## 只读部署检查
+
+本地核对账户和资源，不创建资源、不迁移、不发布：
 
 ```bash
-npx wrangler d1 create agentic-inbox-directory
+CLOUDFLARE_ACCOUNT_ID=<目标账户ID> APP_NAME=agentic-inbox npm run cf:deploy -- --plan
 ```
 
-将返回的数据库 ID 填入 `wrangler.jsonc` 的 `d1_databases[0].database_id`，替换全零占位值。保留绑定名 `DIRECTORY`，然后：
+输出会列出计划沿用/创建的资源和缺失的 Secret 名称，不会输出 Secret 值。正常部署由 Workers Builds 执行；本地手动运行同一命令时省略 `-- --plan`，需明确目标账户。
 
-```bash
-npx wrangler d1 migrations apply DIRECTORY --remote
-```
-
-只创建三张业务表：`users`、`mailboxes`、`mailbox_members`。邮件正文和附件不会复制到 D1。
-
-## 配置管理员和域名
-
-在 `wrangler.jsonc` 中配置：
-
-```jsonc
-"vars": {
-  "DOMAINS": "ie8.net,second-domain.example",
-  "EMAIL_ADDRESSES": []
-}
-```
-
-使用 Worker Secret 设置首位管理员邮箱，避免将登录邮箱提交到公开仓库：
-
-```bash
-npx wrangler secret put ADMIN_EMAILS
-# 在交互提示中输入首位管理员的 Access 登录邮箱。
-```
-
-- `ADMIN_EMAILS` 是首位/应急管理员的 Access 登录邮箱，允许逗号分隔。只应填写可信的已验证身份，不要填写邮箱域名通配符。
-- 配置的管理员在首次登录时创建账户，随后绑定其已验证 JWT 的 `issuer + sub`；现有成员不会因为修改这个变量自动升级为管理员。后续管理员可在团队管理页分配。
-- 普通成员需要先由管理员邀请，再通过 Access 登录。邀请不会发送邮件；请自行告知成员访问地址。Cloudflare Access 策略也必须允许该成员。
-- `DOMAINS` 是应用允许创建和投递的邮箱域名列表。每个域名分别配置 Email Routing/DNS 并投递到同一个 Worker。发信域名须在 Email Service 中单独验证。
-- `EMAIL_ADDRESSES` 非空时继续作为全局地址白名单；不是用户授权列表。成员可访问哪些邮箱由 D1 授权决定。
-- `POLICY_AUD` 和 `TEAM_DOMAIN` 沿用生产 Worker 的 Secrets。切勿在仓库里填写令牌。
-- `DEV_USER_EMAIL` 仅在本地开发模式生效，生产环境始终验证 Access JWT，不使用开发身份。
-
-## 发布和导入
-
-```bash
-npm ci
-npm test
-npm run typecheck
-npm run build
-# 审查代码与部署目标后，发布生产版本：
-npx wrangler deploy
-```
-
-如果原 Worker 名称不是 `agentic-inbox`，先将配置中的 `name` 改成真实名称。保持现有桶和 DO 绑定，检查构建配置没有覆盖生产 Secrets。
-
-1. 首位管理员登录，进入首页的 **Team administration**。
-2. 点击 **Import existing mailboxes**。导入按页执行，可重复运行，不会重新启用已停用邮箱；只导入当前域名/地址配置允许的邮箱。
-3. 管理员可以立即查看导入的邮箱。普通成员在分配权限之前看不到任何邮箱。
-4. 邀请成员，选择邮箱，将其授予 Editor 或 Viewer。共享邮箱可分配给多个成员。
-5. 在首页创建新邮箱；在管理页分配给成员。
-
-停用邮箱会拒收新邮件、撤销成员授权，但保留邮件、设置和附件。管理页可以恢复；恢复后需要重新分配成员。创建过程中失败、已经留下设置对象的邮箱，也可在管理页检查后恢复。
-
-## MCP 兼容性
-
-`/mcp` 使用无状态 Streamable HTTP，每个请求绑定当前验证过的用户，并在工具执行时检查最新授权。不再使用共享的 MCP Durable Object 会话；旧客户端需要重新连接到 `/mcp`，旧 `/mcp/sse` 会话不再提供服务。
-
-外部客户端必须发送有效的用户 Cloudflare Access JWT（由 Access 传入 `cf-access-jwt-assertion`）。仅持有 Access Service Token 不再具有任何用户权限；本版没有实现服务账号代理、独立 OAuth 登录或长期 API Key。浏览器能登录不代表任意外部 MCP 客户端已经完成认证。
-
-## 验收
-
-- 两个不同 Access 用户登录，分别只能看到分配的邮箱。
-- Viewer 可以读信、搜索和下载附件；API、AI 工具和 MCP 都不能借此发信或修改草稿。
-- 编辑者可以处理共享邮箱；只有管理员能修改设置和成员。
-- 修改 URL、Agent 名称或 MCP `mailboxId` 不会访问其他邮箱/用户。
-- 已连接 Agent 在下一次消息或工具操作时检查撤权；不会仅依赖连接建立时的权限。已经发到客户端的数据不能回收。
-- 给多个本地邮箱、CC、BCC 地址分别投递，按 SMTP 信封收件人落入对应邮箱。
-- 每个域名分别验证真实收发信、附件及自动草稿；本地自动测试不发送真实邮件、不调用付费模型。
-
-## 开发和测试
+## 本地开发与验证
 
 需要 Node.js 24（测试使用内置 SQLite）。
 
@@ -109,10 +97,20 @@ npx wrangler d1 migrations apply DIRECTORY --local
 npm run dev
 ```
 
-本地默认管理员是 `admin@localhost.test`。如果设置了 `ADMIN_EMAILS`，在未使用 Access 的本地开发中，还需在未提交的 `.dev.vars` 设置 `DEV_USER_EMAIL` 为该管理员邮箱。切换开发用户需重启服务，不能通过浏览器自报身份。
+本地默认身份是 `admin@localhost.test`。`.dev.vars` 的 `ADMIN_EMAILS` / `DEV_USER_EMAIL` 示例仅供开发，生产始终验证 Access JWT。切换开发身份需要重启服务。
 
-`npm test` 包括真实 SQL 上的权限/API/MCP/收信测试，以及 Miniflare/workerd 中真实 D1、Mailbox DO 事务、Agent 私人历史和 WebSocket 撤权测试。CI 只检查代码，不会部署。
+提交前：
 
-## 回滚
+```bash
+npm test
+npm run typecheck
+npm run build
+```
 
-D1 目录是增量改造，原有邮件存储仍然存在。但旧版应用采用“所有 Access 用户可操作全部邮箱”的权限模型。回滚 Worker 之前，应先把 Access 策略限制为管理员，避免普通成员恢复旧版的全邮箱访问权限。不要通过清空 D1 来回滚。
+测试包含权限、API、MCP、收信路由、真实 workerd/D1/DO/Agent 撤权，以及自动部署的资源保留、迁移顺序和失败保护。测试不发送真实邮件、不调用付费 AI。
+
+## MCP 与回滚
+
+`/mcp` 使用无状态 Streamable HTTP。外部客户端需要有效的用户 Access JWT；旧 SSE 会话或仅持有 Access Service Token 的客户端不再具有用户权限。客户端调用的每个工具都检查当前邮箱授权。
+
+回滚使用 Cloudflare Worker 的历史部署。数据库迁移不回退，必须保持向后兼容。回滚到不含团队权限的旧版前，应先把 Access 策略限制为管理员，防止恢复旧版“全部 Access 用户可操作全部邮箱”的行为。不要清空 D1 来回滚。
