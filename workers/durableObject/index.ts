@@ -79,6 +79,7 @@ interface EmailData {
 	subject: string;
 	sender: string;
 	recipient: string;
+	delivered_to?: string | null;
 	cc?: string | null;
 	bcc?: string | null;
 	date: string;
@@ -910,6 +911,7 @@ export class MailboxDO extends DurableObject<Env> {
 					subject: email.subject,
 					sender: email.sender,
 					recipient: email.recipient,
+					delivered_to: email.delivered_to ?? null,
 					cc: email.cc ?? null,
 					bcc: email.bcc ?? null,
 					date: email.date,

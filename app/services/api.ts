@@ -103,6 +103,12 @@ export interface TeamUser {
 	email: string;
 	role: "admin" | "member";
 	active: number;
+	status?: string;
+	can_create_mailboxes?: number;
+	mailbox_limit?: number;
+	send_limit?: number;
+	ai_limit?: number;
+	hasPassword?: boolean;
 }
 export interface MailboxMember {
 	userId: string;
@@ -110,16 +116,74 @@ export interface MailboxMember {
 	active: number;
 	role: "viewer" | "editor";
 }
+export interface Domain {
+	name: string;
+	enabled: number;
+	receive_enabled: number;
+	send_enabled: number;
+	mx_verified: number;
+	checked_at?: string;
+}
 export interface TeamMailbox {
 	address: string;
 	name: string;
 	active: number;
 }
 const api = {
+	bootstrap: (email: string, password: string, token: string) =>
+		post("/api/auth/bootstrap", { email, password, token }),
+	authConfig: () =>
+		get<{
+			registrationMode: string;
+			accessBridgeAvailable: boolean;
+			user: (TeamUser & { hasPassword: boolean }) | null;
+		}>("/api/auth/config"),
+	login: (email: string, password: string) =>
+		post("/api/auth/login", { email, password }),
+	register: (email: string, password: string, token?: string) =>
+		post<{ ok: boolean; pending?: boolean }>("/api/auth/register", {
+			email,
+			password,
+			token,
+		}),
+	logout: () => post("/api/auth/logout"),
+	changePassword: (password: string, currentPassword?: string) =>
+		post("/api/auth/password", { password, currentPassword }),
+	resetPassword: (token: string, password: string) =>
+		post("/api/auth/reset", { token, password }),
+	createMultiMailbox: (data: unknown) =>
+		post<Mailbox>("/api/v1/mailboxes", data),
+	getRegistrationSettings: () =>
+		get<{ registrationMode: string }>("/api/v1/admin/settings"),
+	setRegistrationMode: (registrationMode: string) =>
+		put("/api/v1/admin/settings", { registrationMode }),
+	resetLink: (id: string) =>
+		post<{ url: string }>(`/api/v1/admin/users/${id}/reset-link`),
+	getUserPermissions: (id: string) =>
+		get<{ domains: string[] }>(`/api/v1/admin/users/${id}/permissions`),
+	setUserPermissions: (id: string, data: unknown) =>
+		put(`/api/v1/admin/users/${id}/permissions`, data),
+	listDomains: () => get<Domain[]>("/api/v1/admin/domains/manage"),
+	addDomain: (name: string) => post("/api/v1/admin/domains/manage", { name }),
+	updateDomain: (name: string, data: unknown) =>
+		put(`/api/v1/admin/domains/manage/${encodeURIComponent(name)}`, data),
+	checkDomain: (name: string) =>
+		post<{ mxVerified: boolean; note: string }>(
+			`/api/v1/admin/domains/manage/${encodeURIComponent(name)}/check`,
+		),
+	changeAddresses: (mailboxId: string, data: unknown) =>
+		put(
+			`/api/v1/admin/mailboxes/${encodeURIComponent(mailboxId)}/addresses`,
+			data,
+		),
+	operations: () => get<any[]>("/api/v1/admin/operations"),
 	getMe: () => get<TeamUser>("/api/v1/me"),
 	listUsers: () => get<TeamUser[]>("/api/v1/admin/users"),
 	inviteUser: (email: string, role: "admin" | "member") =>
-		post<TeamUser>("/api/v1/admin/users", { email, role }),
+		post<TeamUser & { inviteUrl?: string }>("/api/v1/admin/users", {
+			email,
+			role,
+		}),
 	updateUser: (id: string, role: "admin" | "member", active: boolean) =>
 		put(`/api/v1/admin/users/${id}`, { role, active }),
 	listTeamMailboxes: () => get<TeamMailbox[]>("/api/v1/admin/mailboxes"),
@@ -144,7 +208,12 @@ const api = {
 		post("/api/v1/admin/import-mailboxes", { cursor }),
 	// Config
 	getConfig: () =>
-		get<{ domains: string[]; emailAddresses: string[] }>("/api/v1/config"),
+		get<{
+			domains: string[];
+			emailAddresses: string[];
+			canCreate: boolean;
+			mailboxLimit: number;
+		}>("/api/v1/config"),
 
 	// Mailboxes
 	listMailboxes: () => get<Mailbox[]>("/api/v1/mailboxes"),
@@ -199,6 +268,7 @@ const api = {
 	saveDraft: (
 		mailboxId: string,
 		draft: {
+			from?: string;
 			to?: string;
 			cc?: string;
 			bcc?: string;

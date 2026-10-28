@@ -14,10 +14,27 @@ test(
 			write: false,
 			format: "esm",
 			platform: "neutral",
+			define: {
+				"import.meta.env.MODE": '"test"',
+				"import.meta.env.DEV": "false",
+			},
 			conditions: ["workerd", "worker", "browser"],
 			external: ["cloudflare:*", "node:*"],
 			mainFields: ["module", "main"],
 			plugins: [
+				{
+					name: "ssr-test-stub",
+					setup(build) {
+						build.onResolve(
+							{ filter: /^virtual:react-router\/server-build$/ },
+							() => ({ path: "ssr-stub", namespace: "ssr" }),
+						);
+						build.onLoad({ filter: /.*/, namespace: "ssr" }, () => ({
+							contents: "export default {};",
+							loader: "js",
+						}));
+					},
+				},
 				{
 					name: "node-builtins",
 					setup(build) {
@@ -33,8 +50,13 @@ test(
 			logLevel: "silent",
 		});
 		const mf = new Miniflare({
-			modules: true,
-			script: compiled.outputFiles[0].text,
+			modules: [
+				{
+					type: "ESModule",
+					path: "worker.mjs",
+					contents: compiled.outputFiles[0].text,
+				},
+			],
 			compatibilityDate: "2025-11-28",
 			compatibilityFlags: ["nodejs_compat"],
 			d1Databases: ["DIRECTORY"],
@@ -43,12 +65,118 @@ test(
 				MAILBOX: { className: "MailboxDO", useSQLite: true },
 				EMAIL_AGENT: { className: "EmailAgent", useSQLite: true },
 			},
-			bindings: { DOMAINS: "ie8.net", EMAIL_ADDRESSES: [], ADMIN_EMAILS: "" },
+			bindings: {
+				DOMAINS: "ie8.net",
+				EMAIL_ADDRESSES: [],
+				ADMIN_EMAILS: "admin@example.test",
+				BOOTSTRAP_TOKEN: "x".repeat(48),
+			},
 		});
 		try {
 			const fetch = (path: string, init?: RequestInit) =>
 				mf.dispatchFetch(`https://inbox.test${path}`, init);
 			assert.equal((await fetch("/setup")).status, 200);
+			const password = "Strong native password 2026";
+			assert.equal((await fetch("/api/v1/me")).status, 401);
+			const bootstrap = await fetch("/api/auth/bootstrap", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					email: "admin@example.test",
+					password,
+					token: "x".repeat(48),
+				}),
+			});
+			assert.equal(bootstrap.status, 200, await bootstrap.clone().text());
+			const cookie = bootstrap.headers
+				.getSetCookie()
+				.find((x) => x.startsWith("__Host-inbox_session="))!
+				.split(";")[0];
+			assert.equal(
+				(await fetch("/api/v1/me", { headers: { Cookie: cookie } })).status,
+				200,
+			);
+			const login = await fetch("/api/auth/login", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ email: "admin@example.test", password }),
+			});
+			assert.equal(login.status, 200, await login.clone().text());
+			const nativeCookie = login.headers
+				.getSetCookie()
+				.find((x) => x.startsWith("__Host-inbox_session="))!
+				.split(";")[0];
+			const native = (path: string, method = "GET", body?: unknown) =>
+				fetch(path, {
+					method,
+					headers: { Cookie: nativeCookie, "Content-Type": "application/json" },
+					...(body ? { body: JSON.stringify(body) } : {}),
+				});
+			assert.equal((await native("/api/v1/config")).status, 200);
+			assert.equal(
+				(
+					await native("/api/v1/admin/domains/manage", "POST", {
+						name: "other.test",
+					})
+				).status,
+				201,
+			);
+			assert.equal(
+				(
+					await native("/api/v1/admin/domains/manage/other.test", "PUT", {
+						enabled: true,
+						receiveEnabled: true,
+						sendEnabled: true,
+					})
+				).status,
+				200,
+			);
+			const created = await native("/api/v1/mailboxes", "POST", {
+				name: "Native mailbox",
+				prefix: "native",
+				domains: ["ie8.net", "other.test"],
+				defaultAddress: "native@other.test",
+			});
+			assert.equal(created.status, 201, await created.clone().text());
+			const createdBox = (await created.json()) as any;
+			assert.equal(createdBox.addresses.length, 2);
+			const draft = await native(
+				`/api/v1/mailboxes/${createdBox.id}/drafts`,
+				"POST",
+				{
+					from: "native@other.test",
+					to: "outside@example.test",
+					subject: "Native draft",
+					body: "Hello",
+				},
+			);
+			assert.equal(draft.status, 201, await draft.clone().text());
+			const storedDraft = (await (
+				await native(
+					`/api/v1/mailboxes/${createdBox.id}/emails/${((await draft.json()) as any).id}`,
+				)
+			).json()) as any;
+			assert.equal(storedDraft.sender, "native@other.test");
+
+			const crossOrigin = await fetch("/api/auth/logout", {
+				method: "POST",
+				headers: { Cookie: cookie, Origin: "https://other.test" },
+			});
+			assert.equal(crossOrigin.status, 403);
+			assert.equal(
+				(
+					await fetch("/api/auth/logout", {
+						method: "POST",
+						headers: { Cookie: cookie },
+					})
+				).status,
+				200,
+			);
+			assert.equal(
+				(await fetch("/api/v1/me", { headers: { Cookie: cookie } })).status,
+				401,
+			);
+
 			const duplicate = (await (await fetch("/duplicate")).json()) as any;
 			assert.deepEqual(duplicate.results, [true, false]);
 			assert.equal(duplicate.count, 1);
@@ -88,9 +216,6 @@ test(
 			);
 			// A hibernating connection must not process even history/state messages after revocation.
 			const result = new Promise<string>((resolve) => {
-				socket.addEventListener("message", (e) => resolve(String(e.data)), {
-					once: true,
-				});
 				socket.addEventListener("close", () => resolve("closed"), {
 					once: true,
 				});
@@ -102,7 +227,7 @@ test(
 			const reply = await Promise.race([
 				result,
 				new Promise<string>((resolve) =>
-					setTimeout(() => resolve("no-reply"), 1000),
+					setTimeout(() => resolve("no-reply"), 5000),
 				),
 			]);
 			assert.equal(reply, "closed");

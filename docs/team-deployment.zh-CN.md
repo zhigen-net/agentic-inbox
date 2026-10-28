@@ -31,21 +31,16 @@
 
 部署 Token 权限：Account Settings Read、Workers Scripts Edit、Workers R2 Storage Edit、D1 Edit，以及 Wrangler 查询账户身份所需的 User Details Read / Memberships Read。Workers AI 和 Email Service 仍需在对应账户启用。默认自动生成的 Builds Token 可能缺少 D1 权限，应选择自建 Token。
 
-## 首次发布的 Access 与管理员
+## 独立账号与管理员
 
-本应用使用 Cloudflare Access，不能像 CRM 的密码登录那样自动生成管理员密码。以下配置需要提供一次：
+当前版本使用独立密码账号和会话。`ADMIN_EMAILS` 是首位管理员登录邮箱；已有 `POLICY_AUD` / `TEAM_DOMAIN` 继续保留，作为旧 Access 账号的过渡入口。
 
-| Secret         | 内容                                       |
-| -------------- | ------------------------------------------ |
-| `POLICY_AUD`   | 此 Worker 的 Access 应用 audience          |
-| `TEAM_DOMAIN`  | Access team URL 或完整 certs URL           |
-| `ADMIN_EMAILS` | 首位管理员的 Access 登录邮箱，支持逗号分隔 |
+- 已有管理员：部署后进入“账号设置”设置独立密码，验证后再调整覆盖全站的 Access 门禁。
+- 全新安装：额外配置随机 `BOOTSTRAP_TOKEN`（至少 32 位），访问 `/setup` 设置管理员密码；初始化只在尚无管理员密码时有效。
+- 构建脚本必需 `ADMIN_EMAILS`，其余三个 Secret 仅在提供且线上尚不存在时初始化，已有值永不覆盖。
+- Cloudflare 外层 Access 策略不会由代码部署自动删除。不移除全站门禁时，外部用户仍需先通过 Access。
 
-可在 Worker 的 Variables & Secrets 中设置，也可以在 Workers Builds 的构建 Secrets 中提供。部署脚本只把线上缺失的 Secret 通过部署请求初始化；已有 Secret 永不覆盖或轮换。构建日志不会输出 Secret 的值。首位管理员邮箱不要提交到公开仓库。
-
-已有生产 Worker 的 `POLICY_AUD` / `TEAM_DOMAIN` 会沿用，只需补上 `ADMIN_EMAILS`。测试 Worker 应配置自己的 Access 应用。缺少必要 Secret 时脚本停止，不会发布一个不可登录的版本；配置后在 Builds 中重试。
-
-普通成员需要管理员在 Team administration 中邀请，并且也应被 Access 策略允许。邀请不发送邮件，成员需使用同一个受信任的 Access 邮箱登录；首次登录后绑定已验证的 `issuer + sub`。
+完整用户、域名、多地址和旧数据说明见 [独立账号与多域名邮箱](accounts-mailboxes.zh-CN.md)。
 
 ## 每次自动部署会做什么
 
@@ -61,11 +56,11 @@
 
 ## 域名和旧邮件
 
-- 原有 Worker 的 `DOMAINS`、`EMAIL_ADDRESSES` 及其它普通变量会保留。可在控制台将 `DOMAINS` 设置为逗号分隔的域名。
-- 新环境可通过构建变量 `INBOX_DOMAINS` 设置域名；设置时会明确覆盖该环境的 `DOMAINS`。
+- 原有 Worker 的普通变量会保留。`DOMAINS` 用于首次导入旧配置；之后在应用后台管理域名和用户域名权限。
+- 新环境可通过构建变量 `INBOX_DOMAINS` 设置域名；用于初始 `DOMAINS` 配置；目录初始化完成后以应用数据库为准。
 - 每个正式收信域名仍需单独配置 Email Routing/DNS，转发到生产 Worker。发信域名需单独完成 Email Service 验证。
 - 既有 Mailbox DO、R2 邮件附件和邮箱设置保持原位，不会为生产环境新建替代桶。
-- 首次升级后，管理员登录 → **Team administration → Import existing mailboxes**，将原邮箱接入新权限目录。导入按页执行，可重复运行，不会恢复已停用邮箱。
+- 管理员首次访问会自动核对旧邮箱目录；也可登录 → **管理后台 → 邮箱与授权 → 重新核对旧邮箱目录**，将原邮箱接入新权限目录。导入按页执行，可重复运行，不会恢复已停用邮箱。
 - 管理员访问全部启用邮箱。给成员分配 Editor 或 Viewer；一个邮箱授权多人就是共享邮箱。
 
 | 邮箱角色 | 能力                                       |
@@ -97,7 +92,7 @@ npx wrangler d1 migrations apply DIRECTORY --local
 npm run dev
 ```
 
-本地默认身份是 `admin@localhost.test`。`.dev.vars` 的 `ADMIN_EMAILS` / `DEV_USER_EMAIL` 示例仅供开发，生产始终验证 Access JWT。切换开发身份需要重启服务。
+本地也使用独立账号。在未提交的 `.dev.vars` 设置 `ADMIN_EMAILS` 和随机 `BOOTSTRAP_TOKEN`，首次打开 `/setup` 设置密码；不再通过开发变量自动假扮用户。
 
 提交前：
 
@@ -111,6 +106,6 @@ npm run build
 
 ## MCP 与回滚
 
-`/mcp` 使用无状态 Streamable HTTP。外部客户端需要有效的用户 Access JWT；旧 SSE 会话或仅持有 Access Service Token 的客户端不再具有用户权限。客户端调用的每个工具都检查当前邮箱授权。
+`/mcp` 使用无状态 Streamable HTTP。外部客户端需要有效的原生用户会话；过渡期间也接受已验证的用户 Access JWT；旧 SSE 会话或仅持有 Access Service Token 的客户端不再具有用户权限。客户端调用的每个工具都检查当前邮箱授权。
 
 回滚使用 Cloudflare Worker 的历史部署。数据库迁移不回退，必须保持向后兼容。回滚到不含团队权限的旧版前，应先把 Access 策略限制为管理员，防止恢复旧版“全部 Access 用户可操作全部邮箱”的行为。不要清空 D1 来回滚。

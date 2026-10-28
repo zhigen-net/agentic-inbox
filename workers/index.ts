@@ -16,6 +16,16 @@ import {
 } from "./lib/email-helpers";
 import { SendEmailRequestSchema } from "./lib/schemas";
 import { handleReplyEmail, handleForwardEmail } from "./routes/reply-forward";
+import {
+	createMailbox,
+	defaultAddress,
+	assertSender,
+	mailboxAddresses,
+	deliveredMailbox,
+	ensureLegacyDirectory,
+} from "./domain/mailboxes";
+import { audit, rateLimit, consumeQuota } from "./domain/accounts";
+import { managementApp } from "./routes/management";
 import { teamApp } from "./routes/team";
 import {
 	allowedDomains,
@@ -41,6 +51,7 @@ const CreateMailboxBody = z.object({
 });
 
 const DraftBody = z.object({
+	from: z.string().email().optional(),
 	to: z.string().optional(),
 	cc: z.string().optional(),
 	bcc: z.string().optional(),
@@ -103,74 +114,42 @@ app.use(
 	}),
 );
 app.route("/", teamApp);
+app.route("/", managementApp);
 app.use("/api/v1/mailboxes/:mailboxId/*", requireMailbox);
 
 // -- Config ---------------------------------------------------------
 
 app.get("/api/v1/config", async (c) => {
 	const user = await currentUser(c.env, c.var.principal);
+	await ensureLegacyDirectory(c.env);
+	const domains =
+		user.role === "admin"
+			? (
+					await directory(c.env)
+						.prepare("SELECT name FROM domains WHERE enabled=1 ORDER BY name")
+						.all()
+				).results.map((d: any) => d.name)
+			: (
+					await directory(c.env)
+						.prepare(
+							"SELECT d.name FROM domains d JOIN user_domains ud ON ud.domain=d.name WHERE ud.user_id=? AND d.enabled=1 ORDER BY d.name",
+						)
+						.bind(user.id)
+						.all()
+				).results.map((d: any) => d.name);
 	return c.json({
-		domains: allowedDomains(c.env),
-		emailAddresses: user.role === "admin" ? (c.env.EMAIL_ADDRESSES ?? []) : [],
+		domains,
+		emailAddresses: [],
+		canCreate: user.role === "admin" || !!user.can_create_mailboxes,
+		mailboxLimit: user.mailbox_limit,
 	});
 });
-
-// Only administrators provision mailboxes. Existing mail remains in the original DO.
 app.get("/api/v1/mailboxes", async (c) =>
 	c.json(await visibleMailboxes(c.env, c.var.principal)),
 );
-app.post("/api/v1/mailboxes", async (c) => {
-	await requireAdmin(c.env, c.var.principal);
-	const {
-		name,
-		settings,
-		email: rawEmail,
-	} = CreateMailboxBody.parse(await c.req.json());
-	const email = rawEmail.toLowerCase();
-	if (!isAllowedAddress(c.env, email))
-		return c.json(
-			{
-				error:
-					"Address must belong to DOMAINS and, when configured, EMAIL_ADDRESSES",
-			},
-			403,
-		);
-	const key = `mailboxes/${email}.json`;
-	if (await c.env.BUCKET.head(key))
-		return c.json(
-			{
-				error:
-					"Mailbox already exists. Import existing mailboxes from Team administration.",
-			},
-			409,
-		);
-	const db = directory(c.env);
-	const reserved = await db
-		.prepare(
-			"INSERT OR IGNORE INTO mailboxes (address, name, active) VALUES (?, ?, 0)",
-		)
-		.bind(email, name)
-		.run();
-	if (!reserved.meta.changes)
-		return c.json({ error: "Mailbox already exists or is disabled" }, 409);
-	const finalSettings = {
-		fromName: name,
-		forwarding: { enabled: false, email: "" },
-		signature: { enabled: false, text: "" },
-		autoReply: { enabled: false, subject: "", message: "" },
-		...settings,
-	};
-	await c.env.BUCKET.put(key, JSON.stringify(finalSettings));
-	await c.env.MAILBOX.get(c.env.MAILBOX.idFromName(email)).getFolders();
-	await db
-		.prepare("UPDATE mailboxes SET active = 1 WHERE address = ?")
-		.bind(email)
-		.run();
-	return c.json(
-		{ id: email, email, name, role: "admin", settings: finalSettings },
-		201,
-	);
-});
+app.post("/api/v1/mailboxes", async (c) =>
+	c.json(await createMailbox(c.env, c.var.principal, await c.req.json()), 201),
+);
 app.get("/api/v1/mailboxes/:mailboxId", async (c) => {
 	const mailboxId = c.req.param("mailboxId").toLowerCase();
 	const role = await authorizeMailbox(
@@ -184,7 +163,8 @@ app.get("/api/v1/mailboxes/:mailboxId", async (c) => {
 	return c.json({
 		id: mailboxId,
 		name: mailboxId,
-		email: mailboxId,
+		email: await defaultAddress(c.env, mailboxId),
+		addresses: await mailboxAddresses(c.env, mailboxId),
 		role,
 		settings: await obj.json(),
 	});
@@ -199,6 +179,7 @@ app.put("/api/v1/mailboxes/:mailboxId", async (c) => {
 	if (!(await c.env.BUCKET.head(key)))
 		return c.json({ error: "Not found" }, 404);
 	await c.env.BUCKET.put(key, JSON.stringify(settings));
+	await audit(c.env, c.var.principal, "mailbox.settings", mailboxId);
 	return c.json({
 		id: mailboxId,
 		name: mailboxId,
@@ -219,6 +200,7 @@ app.delete("/api/v1/mailboxes/:mailboxId", async (c) => {
 			.prepare("DELETE FROM mailbox_members WHERE mailbox_address = ?")
 			.bind(mailboxId),
 	]);
+	await audit(c.env, c.var.principal, "mailbox.disable", mailboxId);
 	return c.body(null, 204);
 });
 
@@ -280,7 +262,9 @@ app.post("/api/v1/mailboxes/:mailboxId/emails", async (c: AppContext) => {
 
 	let toStr: string, fromEmail: string, fromDomain: string;
 	try {
-		({ toStr, fromEmail, fromDomain } = validateSender(to, from, mailboxId));
+		const sender = (typeof from === "string" ? from : from.email).toLowerCase();
+		await assertSender(c.env, mailboxId, sender);
+		({ toStr, fromEmail, fromDomain } = validateSender(to, from, sender));
 	} catch (e) {
 		if (e instanceof SenderValidationError)
 			return c.json({ error: e.message }, 400);
@@ -363,8 +347,9 @@ app.post("/api/v1/mailboxes/:mailboxId/emails", async (c: AppContext) => {
 
 app.post("/api/v1/mailboxes/:mailboxId/drafts", async (c: AppContext) => {
 	const mailboxId = c.req.param("mailboxId")!;
-	const { to, cc, bcc, subject, body, in_reply_to, thread_id, draft_id } =
+	const { from, to, cc, bcc, subject, body, in_reply_to, thread_id, draft_id } =
 		DraftBody.parse(await c.req.json());
+	if (from) await assertSender(c.env, mailboxId, from);
 	const stub = c.var.mailboxStub;
 	if (draft_id) await stub.deleteEmail(draft_id); // not atomic — create-then-delete would be safer
 	const messageId = crypto.randomUUID();
@@ -374,7 +359,7 @@ app.post("/api/v1/mailboxes/:mailboxId/drafts", async (c: AppContext) => {
 		{
 			id: messageId,
 			subject: subject || "",
-			sender: mailboxId.toLowerCase(),
+			sender: from || (await defaultAddress(c.env, mailboxId)),
 			recipient: (to || "").toLowerCase(),
 			cc: cc?.toLowerCase() || null,
 			bcc: bcc?.toLowerCase() || null,
@@ -600,24 +585,11 @@ async function receiveEmail(
 	const parsedEmail = await new PostalMime().parse(rawEmail);
 
 	// The SMTP envelope determines delivery. To/Cc/Bcc headers are display metadata.
-	const mailboxId = event.to.trim().toLowerCase();
-	if (!isAllowedAddress(env, mailboxId)) {
-		event.setReject("Recipient domain or address is not enabled");
+	const deliveredTo = event.to.trim().toLowerCase();
+	const mailboxId = await deliveredMailbox(env, deliveredTo);
+	if (!mailboxId) {
+		event.setReject("Unknown or disabled recipient address");
 		return;
-	}
-	if (!(await env.BUCKET.head(`mailboxes/${mailboxId}.json`))) {
-		event.setReject("Unknown mailbox");
-		return;
-	}
-	if (env.DIRECTORY) {
-		const mailbox = await directory(env)
-			.prepare("SELECT active FROM mailboxes WHERE address = ?")
-			.bind(mailboxId)
-			.first<{ active: number }>();
-		if (mailbox && !mailbox.active) {
-			event.setReject("Mailbox disabled");
-			return;
-		}
 	}
 	const allRecipients = (parsedEmail.to || [])
 		.map((t) => t.address?.toLowerCase())
@@ -701,6 +673,7 @@ async function receiveEmail(
 			id: messageId,
 			subject: parsedEmail.subject || "",
 			sender: (parsedEmail.from?.address || "").toLowerCase(),
+			delivered_to: deliveredTo,
 			recipient: allRecipients.join(", "),
 			cc: ccRecipients.join(", ") || null,
 			bcc: bccRecipients.join(", ") || null,
@@ -718,14 +691,35 @@ async function receiveEmail(
 
 	if (!created) return;
 	ctx.waitUntil(
-		onNewEmail({
-			mailboxId,
-			emailId: messageId,
-			sender: (parsedEmail.from?.address || "").toLowerCase(),
-			subject: parsedEmail.subject || "",
-			threadId,
-		}).catch((e: Error) =>
-			console.error("Auto-draft trigger failed:", e.message),
+		(async () => {
+			const settingsObject = await env.BUCKET.get(
+				`mailboxes/${mailboxId}.json`,
+			);
+			const settings = settingsObject
+				? await settingsObject.json<{ autoDraftEnabled?: boolean }>()
+				: {};
+			if (settings.autoDraftEnabled === false) return;
+			await rateLimit(
+				env,
+				`auto-draft:${mailboxId}:${new Date().toISOString().slice(0, 10)}`,
+				25,
+				86400,
+			);
+			const owner = await directory(env)
+				.prepare("SELECT owner_id FROM mailboxes WHERE address=?")
+				.bind(mailboxId)
+				.first<{ owner_id: string | null }>();
+			if (owner?.owner_id)
+				await consumeQuota(env, { userId: owner.owner_id, email: "" }, "ai");
+			return onNewEmail({
+				mailboxId,
+				emailId: messageId,
+				sender: (parsedEmail.from?.address || "").toLowerCase(),
+				subject: parsedEmail.subject || "",
+				threadId,
+			});
+		})().catch((e: Error) =>
+			console.error("Auto-draft skipped or failed:", e.message),
 		),
 	);
 }

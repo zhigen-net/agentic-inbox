@@ -1,3 +1,4 @@
+import { accountToken, audit } from "../domain/accounts";
 import { Hono } from "hono";
 import { z } from "zod";
 import type { MailboxContext } from "../lib/mailbox";
@@ -17,11 +18,18 @@ teamApp.get("/api/v1/me", async (c) =>
 teamApp.use("/api/v1/admin/*", async (c, next) => {
 	await requireAdmin(c.env, c.var.principal);
 	await next();
+	if (
+		c.req.method !== "GET" &&
+		c.res.status < 400 &&
+		(c.req.path.includes("/members/") ||
+			/^\/api\/v1\/admin\/mailboxes\/[^/]+$/.test(c.req.path))
+	)
+		await audit(c.env, c.var.principal, "mailbox." + c.req.method, c.req.path);
 });
 teamApp.get("/api/v1/admin/users", async (c) => {
 	const users = await directory(c.env)
 		.prepare(
-			"SELECT id, email, role, active, created_at FROM users ORDER BY email",
+			"SELECT id, email, role, active, status, can_create_mailboxes, mailbox_limit, send_limit, ai_limit, password_hash IS NOT NULL AS hasPassword, created_at FROM users ORDER BY email",
 		)
 		.all();
 	return c.json(users.results);
@@ -43,7 +51,24 @@ teamApp.post("/api/v1/admin/users", async (c) => {
 		.prepare("SELECT id, email, role, active FROM users WHERE email = ?")
 		.bind(email)
 		.first();
-	return c.json(user, 201);
+	const u = user as any;
+	const password = await db
+		.prepare("SELECT password_hash FROM users WHERE id=?")
+		.bind(u.id)
+		.first<any>();
+	const token = password?.password_hash
+		? undefined
+		: await accountToken(c.env, u.id, "invite");
+	await audit(c.env, c.var.principal, "user.invite", u.id);
+	return c.json(
+		{
+			...u,
+			inviteUrl: token
+				? `${new URL(c.req.url).origin}/register#token=${token}&email=${encodeURIComponent(email)}`
+				: undefined,
+		},
+		201,
+	);
 });
 teamApp.put("/api/v1/admin/users/:userId", async (c) => {
 	const body = z
@@ -69,9 +94,17 @@ teamApp.put("/api/v1/admin/users/:userId", async (c) => {
 		);
 	}
 	await directory(c.env)
-		.prepare("UPDATE users SET role = ?, active = ? WHERE id = ?")
+		.prepare(
+			"UPDATE users SET role = ?, active = ?, status='approved' WHERE id = ?",
+		)
 		.bind(body.role, Number(body.active), id)
 		.run();
+	if (!body.active)
+		await directory(c.env)
+			.prepare("DELETE FROM sessions WHERE user_id=?")
+			.bind(id)
+			.run();
+	await audit(c.env, c.var.principal, "user.update", id, body);
 	return c.json({ id, ...body });
 });
 teamApp.get("/api/v1/admin/mailboxes", async (c) => {
@@ -83,7 +116,14 @@ teamApp.get("/api/v1/admin/mailboxes", async (c) => {
 teamApp.put("/api/v1/admin/mailboxes/:mailboxId", async (c) => {
 	z.object({ active: z.literal(true) }).parse(await c.req.json());
 	const address = c.req.param("mailboxId").toLowerCase();
-	if (!isAllowedAddress(c.env, address))
+	if (
+		!(await directory(c.env)
+			.prepare(
+				`SELECT a.address FROM mailbox_addresses a JOIN domains d ON d.name=a.domain WHERE a.mailbox_address=? AND a.active=1 AND d.enabled=1`,
+			)
+			.bind(address)
+			.first())
+	)
 		return c.json(
 			{ error: "Address is no longer enabled in the domain configuration" },
 			400,
@@ -160,14 +200,27 @@ teamApp.post("/api/v1/admin/import-mailboxes", async (c) => {
 	const statements: D1PreparedStatement[] = [];
 	for (const obj of page.objects) {
 		const address = obj.key.slice("mailboxes/".length, -".json".length);
-		if (!obj.key.endsWith(".json") || !isAllowedAddress(c.env, address))
+		if (
+			!obj.key.endsWith(".json") ||
+			!z.string().email().safeParse(address).success
+		)
 			continue;
 		statements.push(
 			directory(c.env)
 				.prepare(
-					"INSERT OR IGNORE INTO mailboxes (address, name) VALUES (?, ?)",
+					"INSERT OR IGNORE INTO domains(name,receive_enabled,send_enabled) VALUES (?,1,1)",
 				)
-				.bind(address, address),
+				.bind(address.split("@")[1]),
+			directory(c.env)
+				.prepare(
+					"INSERT OR IGNORE INTO mailboxes(address,name,stable_id,default_address) VALUES (?,?,?,?)",
+				)
+				.bind(address, address, crypto.randomUUID(), address),
+			directory(c.env)
+				.prepare(
+					"INSERT OR IGNORE INTO mailbox_addresses(address,mailbox_address,domain) VALUES (?,?,?)",
+				)
+				.bind(address, address, address.split("@")[1]),
 		);
 	}
 	if (statements.length) await directory(c.env).batch(statements);

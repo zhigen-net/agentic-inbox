@@ -2,14 +2,15 @@
 // Licensed under the Apache 2.0 license found in the LICENSE file or at:
 //     https://opensource.org/licenses/Apache-2.0
 
-import {
-	index,
-	type RouteConfig,
-	route,
-} from "@react-router/dev/routes";
+import { index, type RouteConfig, route } from "@react-router/dev/routes";
 
 export default [
 	index("routes/home.tsx"),
+	route("setup", "routes/setup.tsx"),
+	route("login", "routes/login.tsx"),
+	route("register", "routes/register.tsx"),
+	route("reset-password", "routes/reset-password.tsx"),
+	route("account", "routes/account.tsx"),
 	route("team", "routes/team.tsx"),
 	route("mailbox/:mailboxId", "routes/mailbox.tsx", [
 		index("routes/mailbox-index.tsx"),

@@ -78,11 +78,7 @@ test("deployment preserves existing bucket, D1, variables and secrets; new envir
 		fresh.config.d1_databases[0].database_name,
 		"inbox-dev-directory",
 	);
-	assert.deepEqual(fresh.missingSecrets.sort(), [
-		"ADMIN_EMAILS",
-		"POLICY_AUD",
-		"TEAM_DOMAIN",
-	]);
+	assert.deepEqual(fresh.missingSecrets.sort(), ["ADMIN_EMAILS"]);
 	assert.throws(() => makeConfig(source, settings, [], env), /停止部署/);
 });
 test("read-only deployment plan never creates resources, writes configuration or invokes build/deploy", async () => {

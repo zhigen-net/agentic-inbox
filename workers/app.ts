@@ -15,6 +15,9 @@ import {
 	resolvePrincipal,
 	type AuthVariables,
 } from "./lib/auth";
+import { getCookie } from "hono/cookie";
+import { accountsApp } from "./routes/accounts";
+import { SESSION_COOKIE, sessionPrincipal } from "./domain/accounts";
 import type { Env } from "./types";
 
 export { MailboxDO } from "./durableObject";
@@ -69,64 +72,48 @@ app.use("*", async (c, next) => {
 	await next();
 });
 
-// Cloudflare Access JWT validation middleware (production only)
+// 原生会话优先；保留经过验证的 Access 登录桥接，避免旧管理员升级后被锁在门外。
 app.use("*", async (c, next) => {
-	// Skip validation in development
-	if (import.meta.env.DEV) {
-		const email = c.env.DEV_USER_EMAIL || "admin@localhost.test";
-		c.set(
-			"principal",
-			await resolvePrincipal(
-				{
-					...c.env,
-					ADMIN_EMAILS: c.env.ADMIN_EMAILS || "admin@localhost.test",
-				},
-				{
-					iss: "http://localhost",
-					sub: email,
-					email,
-				},
-			),
-		);
-		return next();
-	}
-
-	const { POLICY_AUD, TEAM_DOMAIN } = c.env;
-
-	// Fail closed in production if Access is not configured.
-	if (!POLICY_AUD || !TEAM_DOMAIN) {
-		return c.text(
-			"Cloudflare Access must be configured in production. Set POLICY_AUD and TEAM_DOMAIN.",
-			500,
-		);
-	}
-
+	c.header("Cache-Control", "no-store");
+	c.header("Referrer-Policy", "no-referrer");
+	let principal = await sessionPrincipal(c.env, getCookie(c, SESSION_COOKIE));
 	const token = c.req.header("cf-access-jwt-assertion");
-	if (!token) {
-		return c.text("Missing required CF Access JWT", 403);
-	}
-
-	let claims;
-	try {
-		const { issuer, certsUrl } = getAccessUrls(TEAM_DOMAIN);
-		const certsKey = certsUrl.toString();
-		let JWKS = accessKeySets.get(certsKey);
-		if (!JWKS) {
-			JWKS = createRemoteJWKSet(certsUrl);
-			accessKeySets.set(certsKey, JWKS);
+	if (
+		!principal &&
+		!getCookie(c, "inbox_signed_out") &&
+		token &&
+		c.env.POLICY_AUD &&
+		c.env.TEAM_DOMAIN
+	) {
+		try {
+			const { issuer, certsUrl } = getAccessUrls(c.env.TEAM_DOMAIN);
+			const key = certsUrl.toString();
+			let keys = accessKeySets.get(key);
+			if (!keys) {
+				keys = createRemoteJWKSet(certsUrl);
+				accessKeySets.set(key, keys);
+			}
+			const { payload } = await jwtVerify(token, keys, {
+				issuer,
+				audience: c.env.POLICY_AUD,
+			});
+			principal = await resolvePrincipal(c.env, payload);
+		} catch {
+			/* 原生登录不依赖 Access；不接受未经验证的邮件头。 */
 		}
-		const { payload } = await jwtVerify(token, JWKS, {
-			issuer,
-			audience: POLICY_AUD,
-		});
-		claims = payload;
-	} catch {
-		return c.text("Invalid or expired Access token", 403);
 	}
-
-	c.set("principal", await resolvePrincipal(c.env, claims));
+	if (principal) c.set("principal", principal);
+	const path = new URL(c.req.url).pathname;
+	if (
+		!principal &&
+		(path.startsWith("/api/v1/") ||
+			path.startsWith("/agents/") ||
+			path.startsWith("/mcp"))
+	)
+		return c.json({ error: "请先登录" }, 401);
 	return next();
 });
+app.route("/", accountsApp);
 
 // MCP server endpoint — used by AI coding tools (ProtoAgent, Claude Code, Cursor, etc.)
 // Must be before API routes and React Router catch-all

@@ -9,6 +9,7 @@ export interface SignatureSettings {
 }
 
 export interface MailboxSettings {
+	autoDraftEnabled?: boolean;
 	fromName?: string;
 	forwarding?: { enabled: boolean; email: string };
 	signature?: SignatureSettings;
@@ -16,7 +17,20 @@ export interface MailboxSettings {
 	agentSystemPrompt?: string;
 }
 
+export interface MailboxAddress {
+	address: string;
+	active: number;
+	receive_enabled: number;
+	send_enabled: number;
+	domain_enabled: number;
+	domain_receive: number;
+	domain_send: number;
+}
 export interface Mailbox {
+	unreadCount?: number;
+	stableId?: string;
+	ownerId?: string;
+	addresses?: MailboxAddress[];
 	role: "admin" | "editor" | "viewer";
 	id: string;
 	email: string;
@@ -26,6 +40,7 @@ export interface Mailbox {
 
 export interface Email {
 	id: string;
+	delivered_to?: string | null;
 	thread_id?: string | null;
 	folder_id?: string | null;
 	subject: string;

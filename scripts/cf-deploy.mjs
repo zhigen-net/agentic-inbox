@@ -6,7 +6,13 @@ import { parse } from "jsonc-parser";
 import { fetch, EnvHttpProxyAgent } from "undici";
 
 const ROOT = fileURLToPath(new URL("../", import.meta.url));
-const SECRET_NAMES = ["POLICY_AUD", "TEAM_DOMAIN", "ADMIN_EMAILS"];
+const SECRET_NAMES = [
+	"ADMIN_EMAILS",
+	"POLICY_AUD",
+	"TEAM_DOMAIN",
+	"BOOTSTRAP_TOKEN",
+];
+const REQUIRED_SECRETS = ["ADMIN_EMAILS"];
 
 export function workerName(env) {
 	const name = env.WRANGLER_CI_OVERRIDE_NAME || env.APP_NAME;
@@ -87,7 +93,7 @@ export function makeConfig(source, settings, databases, env) {
 		),
 	);
 	for (const key of SECRET_NAMES) delete config.vars[key];
-	const missingSecrets = SECRET_NAMES.filter(
+	const missingSecrets = REQUIRED_SECRETS.filter(
 		(key) => !existingSecrets.has(key) && !secrets[key],
 	);
 	return { config, secrets, missingSecrets, createDatabase: !database };

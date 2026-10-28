@@ -214,11 +214,20 @@ export default function EmailPanel({ emailId }: { emailId: string }) {
 				});
 				return;
 			}
+			const draftSender =
+				currentMailbox.addresses?.find(
+					(a) =>
+						a.address === target.sender &&
+						a.active &&
+						a.send_enabled &&
+						a.domain_enabled &&
+						a.domain_send,
+				)?.address || currentMailbox.email;
 			const fromName = currentMailbox.settings?.fromName || currentMailbox.name;
 			const from =
-				fromName && fromName !== currentMailbox.email
-					? { email: currentMailbox.email, name: fromName }
-					: currentMailbox.email;
+				fromName && fromName !== draftSender
+					? { email: draftSender, name: fromName }
+					: draftSender;
 			const originalEmail = target.in_reply_to
 				? allMessages.find((msg) => msg.id === target.in_reply_to)
 				: undefined;
