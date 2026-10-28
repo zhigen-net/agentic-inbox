@@ -46,7 +46,7 @@ function CopyButton({ text }: { text: string }) {
 }
 
 const TOOLS = [
-	{ name: "list_mailboxes", desc: "List all mailboxes" },
+	{ name: "list_mailboxes", desc: "List your assigned mailboxes" },
 	{ name: "list_emails", desc: "List emails in a folder" },
 	{ name: "get_email", desc: "Read a full email with body" },
 	{ name: "get_thread", desc: "Load a conversation thread" },
@@ -61,7 +61,9 @@ const TOOLS = [
 export default function MCPPanel() {
 	const { mailboxId } = useParams<{ mailboxId: string }>();
 	const baseUrl =
-		typeof window !== "undefined" ? window.location.origin : "https://your-app.workers.dev";
+		typeof window !== "undefined"
+			? window.location.origin
+			: "https://your-app.workers.dev";
 	const mcpUrl = `${baseUrl}/mcp`;
 
 	return (
@@ -82,16 +84,13 @@ export default function MCPPanel() {
 							<h3 className="text-sm font-semibold text-kumo-default">
 								Connect via MCP
 							</h3>
-							<p className="text-xs text-kumo-subtle">
-								Model Context Protocol
-							</p>
+							<p className="text-xs text-kumo-subtle">Model Context Protocol</p>
 						</div>
 					</div>
 					<p className="text-xs text-kumo-subtle leading-relaxed">
-						This email agent exposes an MCP server so AI coding
-						assistants can manage your inbox directly — read emails,
-						search, draft replies, and send messages using natural
-						language.
+						This email agent exposes an MCP server so AI coding assistants can
+						manage your inbox directly — read emails, search, draft replies, and
+						send messages using natural language.
 					</p>
 				</div>
 
@@ -110,6 +109,10 @@ export default function MCPPanel() {
 					</div>
 				</div>
 
+				<p className="text-xs text-kumo-subtle">
+					MCP uses your signed-in team identity and mailbox permissions.
+					External clients must authenticate with Cloudflare Access as a user.
+				</p>
 				{/* Available tools */}
 				<div className="space-y-2">
 					<h4 className="text-xs uppercase tracking-wider font-semibold text-kumo-subtle px-0.5">

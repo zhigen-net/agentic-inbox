@@ -23,6 +23,7 @@ import { useParams } from "react-router";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useUIStore } from "~/hooks/useUIStore";
+import { useMe } from "~/queries/team";
 import type { UIMessage } from "ai";
 
 const TOOL_LABELS: Record<string, { label: string; icon: React.ReactNode }> = {
@@ -144,9 +145,7 @@ function MessageBubble({
 	const isUser = message.role === "user";
 
 	return (
-		<div
-			className={`flex gap-2 ${isUser ? "flex-row-reverse" : "flex-row"}`}
-		>
+		<div className={`flex gap-2 ${isUser ? "flex-row-reverse" : "flex-row"}`}>
 			<div
 				className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${
 					isUser
@@ -197,14 +196,10 @@ function MessageBubble({
 												</a>
 											),
 											p: ({ children }) => (
-												<p className="mb-2 last:mb-0">
-													{children}
-												</p>
+												<p className="mb-2 last:mb-0">{children}</p>
 											),
 											strong: ({ children }) => (
-												<strong className="font-semibold">
-													{children}
-												</strong>
+												<strong className="font-semibold">{children}</strong>
 											),
 											ul: ({ children }) => (
 												<ul className="list-disc pl-4 mb-2 last:mb-0 space-y-0.5">
@@ -216,9 +211,7 @@ function MessageBubble({
 													{children}
 												</ol>
 											),
-											li: ({ children }) => (
-												<li>{children}</li>
-											),
+											li: ({ children }) => <li>{children}</li>,
 											h1: ({ children }) => (
 												<h3 className="font-semibold text-sm mb-1">
 													{children}
@@ -295,10 +288,12 @@ function MessageBubble({
 
 function AgentChatConnected({
 	mailboxId,
+	agentName,
 	useAgent,
 	useAgentChat,
 }: {
 	mailboxId: string;
+	agentName: string;
 	useAgent: typeof import("agents/react").useAgent;
 	useAgentChat: typeof import("@cloudflare/ai-chat/react").useAgentChat;
 }) {
@@ -307,9 +302,10 @@ function AgentChatConnected({
 	const [inputValue, setInputValue] = useState("");
 	const { startCompose } = useUIStore();
 
-	const agent = useAgent({ agent: "EmailAgent", name: mailboxId });
-	const { messages, sendMessage, status, setMessages, stop } =
-		useAgentChat({ agent });
+	const agent = useAgent({ agent: "EmailAgent", name: agentName });
+	const { messages, sendMessage, status, setMessages, stop } = useAgentChat({
+		agent,
+	});
 	const isStreaming = status === "streaming" || status === "submitted";
 
 	useEffect(() => {
@@ -348,9 +344,7 @@ function AgentChatConnected({
 			<div className="flex items-center justify-between px-3 py-1.5 border-b border-kumo-line shrink-0">
 				<div className="flex items-center gap-2">
 					<Badge variant="beta">AI</Badge>
-					<span className="text-xs text-kumo-subtle">
-						Email Agent
-					</span>
+					<span className="text-xs text-kumo-subtle">Email Agent</span>
 				</div>
 				<div className="flex items-center gap-1">
 					{isStreaming && <Loader size="sm" />}
@@ -385,17 +379,14 @@ function AgentChatConnected({
 							/>
 						</div>
 						<p className="text-xs text-kumo-subtle text-center leading-relaxed px-4">
-							I can read emails, search conversations, and draft
-							replies.
+							I can read emails, search conversations, and draft replies.
 						</p>
 						<div className="flex flex-col gap-1.5 w-full">
 							{suggestedPrompts.map((prompt) => (
 								<button
 									key={prompt}
 									type="button"
-									onClick={() =>
-										sendMessage({ text: prompt })
-									}
+									onClick={() => sendMessage({ text: prompt })}
 									className="text-left px-3 py-2 rounded-lg border border-kumo-line text-xs text-kumo-strong hover:bg-kumo-tint hover:border-kumo-fill-hover transition-colors cursor-pointer bg-transparent"
 								>
 									{prompt}
@@ -410,8 +401,8 @@ function AgentChatConnected({
 								key={msg.id}
 								message={msg}
 								isStreaming={isStreaming}
-							onAction={(action) => {
-								if (action === "edit") {
+								onAction={(action) => {
+									if (action === "edit") {
 										// Extract draft data from the draft_reply tool result
 										let draftData: {
 											to?: string;
@@ -460,9 +451,7 @@ function AgentChatConnected({
 								</div>
 								<div className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-kumo-elevated border border-kumo-line rounded-bl-sm">
 									<Loader size="sm" />
-									<span className="text-xs text-kumo-subtle">
-										Thinking...
-									</span>
+									<span className="text-xs text-kumo-subtle">Thinking...</span>
 								</div>
 							</div>
 						)}
@@ -501,8 +490,7 @@ function AgentChatConnected({
 								const t = e.target as HTMLTextAreaElement;
 								t.style.height = "auto";
 								t.style.height = `${Math.min(t.scrollHeight, 100)}px`;
-								t.style.overflow =
-									t.scrollHeight > 100 ? "auto" : "hidden";
+								t.style.overflow = t.scrollHeight > 100 ? "auto" : "hidden";
 							}}
 						/>
 						<Button
@@ -523,6 +511,7 @@ function AgentChatConnected({
 
 export default function AgentPanel() {
 	const { mailboxId } = useParams<{ mailboxId: string }>();
+	const { data: me } = useMe();
 	const [hooks, setHooks] = useState<{
 		useAgent: typeof import("agents/react").useAgent;
 		useAgentChat: typeof import("@cloudflare/ai-chat/react").useAgentChat;
@@ -531,18 +520,17 @@ export default function AgentPanel() {
 	const [loadError, setLoadError] = useState<string | null>(null);
 
 	useEffect(() => {
-		Promise.all([
-			import("agents/react"),
-			import("@cloudflare/ai-chat/react"),
-		]).then(([a, c]) =>
-			setHooks({
-				useAgent: a.useAgent,
-				useAgentChat: c.useAgentChat,
-			}),
-		).catch((err) => {
-			console.error("Failed to load agent modules:", err);
-			setLoadError("Failed to connect to agent. Reload to retry.");
-		});
+		Promise.all([import("agents/react"), import("@cloudflare/ai-chat/react")])
+			.then(([a, c]) =>
+				setHooks({
+					useAgent: a.useAgent,
+					useAgentChat: c.useAgentChat,
+				}),
+			)
+			.catch((err) => {
+				console.error("Failed to load agent modules:", err);
+				setLoadError("Failed to connect to agent. Reload to retry.");
+			});
 	}, []);
 
 	if (loadError) {
@@ -553,20 +541,20 @@ export default function AgentPanel() {
 		);
 	}
 
-	if (!hooks) {
+	if (!hooks || !me) {
 		return (
 			<div className="flex flex-col items-center justify-center h-full gap-2">
 				<Loader size="base" />
-				<span className="text-xs text-kumo-subtle">
-					Connecting...
-				</span>
+				<span className="text-xs text-kumo-subtle">Connecting...</span>
 			</div>
 		);
 	}
 
 	return (
 		<AgentChatConnected
-			mailboxId={mailboxId ?? "default"}
+			key={`${me.id}~${mailboxId}`}
+			mailboxId={mailboxId ?? ""}
+			agentName={`${me.id}~${mailboxId}`}
 			useAgent={hooks.useAgent}
 			useAgentChat={hooks.useAgentChat}
 		/>

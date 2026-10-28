@@ -14,7 +14,7 @@ import { useUIStore } from "~/hooks/useUIStore";
 export default function MailboxRoute() {
 	const { mailboxId } = useParams<{ mailboxId: string }>();
 	// Prefetch mailbox data for child components
-	useMailbox(mailboxId);
+	const { data: mailbox, error } = useMailbox(mailboxId);
 	const prevMailboxIdRef = useRef<string | undefined>(undefined);
 	const {
 		isSidebarOpen,
@@ -37,6 +37,13 @@ export default function MailboxRoute() {
 
 		prevMailboxIdRef.current = mailboxId;
 	}, [mailboxId, closeComposeModal, closePanel, closeSidebar]);
+
+	if (error)
+		return (
+			<p role="alert" className="p-8">
+				{error.message}
+			</p>
+		);
 
 	return (
 		<div className="flex h-screen overflow-hidden">
@@ -76,7 +83,7 @@ export default function MailboxRoute() {
 				</div>
 			)}
 
-			<ComposeEmail />
+			{mailbox && mailbox.role !== "viewer" && <ComposeEmail />}
 		</div>
 	);
 }

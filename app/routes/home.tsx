@@ -14,7 +14,7 @@ import {
 } from "@cloudflare/kumo";
 import { EnvelopeIcon, PlusIcon, TrashIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
-import { type FormEvent, useEffect, useRef, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 import { Link as RouterLink } from "react-router";
 import api from "~/services/api";
 import {
@@ -22,6 +22,7 @@ import {
 	useDeleteMailbox,
 	useMailboxes,
 } from "~/queries/mailboxes";
+import { useMe } from "~/queries/team";
 import { queryKeys } from "~/queries/keys";
 
 export function meta() {
@@ -30,11 +31,13 @@ export function meta() {
 
 export default function HomeRoute() {
 	const toastManager = useKumoToastManager();
-	const { data: mailboxes = [], refetch: refetchMailboxes, isFetched: mailboxesFetched } = useMailboxes();
+	const { data: mailboxes = [], error: mailboxError } = useMailboxes();
+	const { data: me, error: meError } = useMe();
+	const isAdmin = me?.role === "admin";
 	const createMailbox = useCreateMailbox();
 	const deleteMailbox = useDeleteMailbox();
 
-	const { data: configData } = useQuery({
+	const { data: configData, error: configError } = useQuery({
 		queryKey: queryKeys.config,
 		queryFn: () => api.getConfig(),
 		staleTime: Infinity, // config rarely changes
@@ -63,32 +66,6 @@ export default function HomeRoute() {
 		}
 	}, [domains, selectedDomain]);
 
-	// Auto-create mailboxes from config (run once when both data sources are ready)
-	const autoCreateDone = useRef(false);
-	useEffect(() => {
-		if (autoCreateDone.current) return;
-		if (emailAddresses.length === 0 || !mailboxesFetched) return;
-		const existingEmails = new Set(
-			mailboxes.map((m) => m.email.toLowerCase()),
-		);
-		const toCreate = emailAddresses.filter(
-			(addr) => !existingEmails.has(addr.toLowerCase()),
-		);
-		if (toCreate.length === 0) {
-			autoCreateDone.current = true;
-			return;
-		}
-		autoCreateDone.current = true;
-		let cancelled = false;
-		Promise.all(
-			toCreate.map((addr) => {
-				const localPart = addr.split("@")[0] || addr;
-				return api.createMailbox(addr, localPart).catch(() => {});
-			}),
-		).then(() => { if (!cancelled) refetchMailboxes(); });
-		return () => { cancelled = true; };
-	}, [emailAddresses, mailboxes, refetchMailboxes]);
-
 	const handleCreate = async (e: FormEvent) => {
 		e.preventDefault();
 		setCreateError(null);
@@ -106,7 +83,9 @@ export default function HomeRoute() {
 			setNewPrefix("");
 			setNewName("");
 		} catch (err: unknown) {
-			const message = (err instanceof Error ? err.message : null) || "Failed to create mailbox";
+			const message =
+				(err instanceof Error ? err.message : null) ||
+				"Failed to create mailbox";
 			setCreateError(message);
 		} finally {
 			setIsCreating(false);
@@ -118,26 +97,27 @@ export default function HomeRoute() {
 		setIsDeleting(true);
 		try {
 			await deleteMailbox.mutateAsync(mailboxToDelete.id);
-			toastManager.add({ title: "Mailbox deleted" });
+			toastManager.add({ title: "Mailbox disabled" });
 			setIsDeleteOpen(false);
 			setMailboxToDelete(null);
 		} catch {
-			toastManager.add({ title: "Failed to delete mailbox", variant: "error" });
+			toastManager.add({
+				title: "Failed to disable mailbox",
+				variant: "error",
+			});
 		} finally {
 			setIsDeleting(false);
 		}
 	};
 
-	const isConfigured = emailAddresses.length > 0;
-	const accounts = isConfigured
-		? emailAddresses.map((addr) => ({
-				id: addr,
-				email: addr,
-				name: addr.split("@")[0] || addr,
-			}))
-		: mailboxes;
-
-	const isLoading = !configData;
+	const accounts = mailboxes;
+	const isLoading = !configData || !me;
+	if (meError || mailboxError || configError)
+		return (
+			<p role="alert" className="p-8">
+				{(meError || mailboxError || configError)?.message}
+			</p>
+		);
 
 	return (
 		<div className="min-h-screen bg-kumo-recessed">
@@ -145,7 +125,12 @@ export default function HomeRoute() {
 				<div className="mb-8">
 					<div className="flex items-center justify-between">
 						<h1 className="text-2xl font-bold text-kumo-default">Mailboxes</h1>
-						{!isConfigured && (
+						{isAdmin && (
+							<RouterLink to="/team" className="text-sm underline">
+								Team administration
+							</RouterLink>
+						)}
+						{isAdmin && (
 							<Button
 								variant="primary"
 								icon={<PlusIcon size={16} />}
@@ -184,16 +169,17 @@ export default function HomeRoute() {
 										{account.name}
 									</div>
 									<div className="text-sm text-kumo-subtle">
-										{account.email}
+										{account.email} ·{" "}
+										{account.role === "viewer" ? "Read-only" : account.role}
 									</div>
 								</div>
-								{!isConfigured && (
+								{isAdmin && (
 									<Button
 										variant="ghost"
 										size="sm"
 										shape="square"
 										icon={<TrashIcon size={16} />}
-										aria-label={`Delete mailbox ${account.email}`}
+										aria-label={`Disable mailbox ${account.email}`}
 										onClick={(e) => {
 											e.preventDefault();
 											e.stopPropagation();
@@ -222,11 +208,11 @@ export default function HomeRoute() {
 								No mailboxes yet
 							</h3>
 							<p className="text-sm text-kumo-subtle max-w-sm mb-5">
-								{isConfigured
-									? "Your email routing is configured but no mailboxes have been created yet. They will appear here automatically."
-									: "Create a mailbox to start sending and receiving emails with your domain."}
+								{isAdmin
+									? "Create a mailbox or import existing mailboxes from Team administration."
+									: "No mailboxes have been assigned to you. Contact your team administrator."}
 							</p>
-							{!isConfigured && (
+							{isAdmin && (
 								<Button
 									variant="primary"
 									icon={<PlusIcon size={16} />}
@@ -270,13 +256,13 @@ export default function HomeRoute() {
 								<span className="text-sm text-kumo-subtle">@</span>
 								{domains.length > 1 ? (
 									<div className="flex-1">
-							<Select
-								aria-label="Domain"
-								value={selectedDomain}
-								onValueChange={(value) => {
-									if (value) setSelectedDomain(value);
-								}}
-							>
+										<Select
+											aria-label="Domain"
+											value={selectedDomain}
+											onValueChange={(value) => {
+												if (value) setSelectedDomain(value);
+											}}
+										>
 											{domains.map((d) => (
 												<Select.Option key={d} value={d}>
 													{d}
@@ -330,14 +316,16 @@ export default function HomeRoute() {
 			>
 				<Dialog size="sm" className="p-6">
 					<Dialog.Title className="text-base font-semibold mb-2">
-						Delete Mailbox
+						Disable Mailbox
 					</Dialog.Title>
 					<Dialog.Description className="text-kumo-subtle text-sm mb-5">
-						Are you sure you want to delete{" "}
+						Disable{" "}
 						<strong className="text-kumo-default">
 							{mailboxToDelete?.email}
 						</strong>
-						? This action cannot be undone.
+						? Mail and settings will be retained. Members lose access and
+						incoming mail is rejected until an administrator restores the
+						mailbox.
 					</Dialog.Description>
 					<div className="flex justify-end gap-2">
 						<Dialog.Close
@@ -353,7 +341,7 @@ export default function HomeRoute() {
 							loading={isDeleting}
 							onClick={handleDelete}
 						>
-							Delete
+							Disable
 						</Button>
 					</div>
 				</Dialog>

@@ -2,17 +2,24 @@
 // Licensed under the Apache 2.0 license found in the LICENSE file or at:
 //     https://opensource.org/licenses/Apache-2.0
 
-import { routeAgentRequest } from "agents";
+import { getAgentByName, routeAgentRequest } from "agents";
 import { Hono } from "hono";
 import { jwtVerify, createRemoteJWKSet } from "jose";
 import { createRequestHandler } from "react-router";
 import { app as apiApp, receiveEmail } from "./index";
-import { EmailMCP } from "./mcp";
+import { handleMCP } from "./mcp";
+import { HTTPException } from "hono/http-exception";
+import { ZodError } from "zod";
+import {
+	authorizeAgentPath,
+	resolvePrincipal,
+	type AuthVariables,
+} from "./lib/auth";
 import type { Env } from "./types";
 
 export { MailboxDO } from "./durableObject";
 export { EmailAgent } from "./agent";
-export { EmailMCP } from "./mcp";
+export { EmailMCP } from "./mcp/legacy";
 
 declare module "react-router" {
 	export interface AppLoadContext {
@@ -39,13 +46,48 @@ function getAccessUrls(teamDomain: string) {
 	return { issuer, certsUrl };
 }
 
+// Reuse the remote key set within a Worker isolate instead of refetching it on each request.
+const accessKeySets = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
+
 // Main app that wraps the API and adds React Router fallback
-const app = new Hono<{ Bindings: Env }>();
+const app = new Hono<{ Bindings: Env; Variables: AuthVariables }>();
+
+app.onError((error, c) => {
+	if (error instanceof HTTPException)
+		return c.json({ error: error.message }, error.status);
+	if (error instanceof ZodError)
+		return c.json({ error: "Invalid request", issues: error.issues }, 400);
+	console.error("Request failed:", error.message);
+	return c.json({ error: "Internal server error" }, 500);
+});
+
+// Require same-origin browser writes, including Agent WebSocket handshakes.
+app.use("*", async (c, next) => {
+	const origin = c.req.header("Origin");
+	if (origin && origin !== new URL(c.req.url).origin)
+		return c.json({ error: "Cross-origin requests are not allowed" }, 403);
+	await next();
+});
 
 // Cloudflare Access JWT validation middleware (production only)
 app.use("*", async (c, next) => {
 	// Skip validation in development
 	if (import.meta.env.DEV) {
+		const email = c.env.DEV_USER_EMAIL || "admin@localhost.test";
+		c.set(
+			"principal",
+			await resolvePrincipal(
+				{
+					...c.env,
+					ADMIN_EMAILS: c.env.ADMIN_EMAILS || "admin@localhost.test",
+				},
+				{
+					iss: "http://localhost",
+					sub: email,
+					email,
+				},
+			),
+		);
 		return next();
 	}
 
@@ -64,37 +106,41 @@ app.use("*", async (c, next) => {
 		return c.text("Missing required CF Access JWT", 403);
 	}
 
+	let claims;
 	try {
 		const { issuer, certsUrl } = getAccessUrls(TEAM_DOMAIN);
-		const JWKS = createRemoteJWKSet(certsUrl);
-		await jwtVerify(token, JWKS, {
+		const certsKey = certsUrl.toString();
+		let JWKS = accessKeySets.get(certsKey);
+		if (!JWKS) {
+			JWKS = createRemoteJWKSet(certsUrl);
+			accessKeySets.set(certsKey, JWKS);
+		}
+		const { payload } = await jwtVerify(token, JWKS, {
 			issuer,
 			audience: POLICY_AUD,
 		});
+		claims = payload;
 	} catch {
 		return c.text("Invalid or expired Access token", 403);
 	}
 
-	// Authorization model note: once a teammate passes the shared Cloudflare
-	// Access policy, they can access all mailboxes in this app by design.
+	c.set("principal", await resolvePrincipal(c.env, claims));
 	return next();
 });
 
 // MCP server endpoint — used by AI coding tools (ProtoAgent, Claude Code, Cursor, etc.)
 // Must be before API routes and React Router catch-all
-const mcpHandler = EmailMCP.serve("/mcp", { binding: "EMAIL_MCP" });
-app.all("/mcp", async (c) => {
-	return mcpHandler.fetch(c.req.raw, c.env, c.executionCtx as ExecutionContext);
-});
-app.all("/mcp/*", async (c) => {
-	return mcpHandler.fetch(c.req.raw, c.env, c.executionCtx as ExecutionContext);
-});
+app.all("/mcp", (c) => handleMCP(c.req.raw, c.env, c.var.principal));
+app.all("/mcp/*", (c) =>
+	c.json({ error: "Use the Streamable HTTP MCP endpoint at /mcp" }, 404),
+);
 
 // Mount the API routes
 app.route("/", apiApp);
 
 // Agent WebSocket routing - must be before React Router catch-all
 app.all("/agents/*", async (c) => {
+	await authorizeAgentPath(c.env, c.var.principal, new URL(c.req.url).pathname);
 	const response = await routeAgentRequest(c.req.raw, c.env);
 	if (response) return response;
 	return c.text("Agent not found", 404);
@@ -110,15 +156,18 @@ app.all("*", (c) => {
 // Export the Hono app as the default export with an email handler
 export default {
 	fetch: app.fetch,
-	async email(
-		event: { raw: ReadableStream; rawSize: number },
-		env: Env,
-		ctx: ExecutionContext,
-	) {
+	async email(event: ForwardableEmailMessage, env: Env, ctx: ExecutionContext) {
 		try {
-			await receiveEmail(event, env, ctx);
+			await receiveEmail(event, env, ctx, async (data) => {
+				const agent = await getAgentByName(env.EMAIL_AGENT, data.mailboxId);
+				return agent.handleNewEmail(data);
+			});
 		} catch (e) {
-			console.error("Failed to process incoming email:", (e as Error).message, (e as Error).stack);
+			console.error(
+				"Failed to process incoming email:",
+				(e as Error).message,
+				(e as Error).stack,
+			);
 			// Re-throw so Cloudflare's email routing can retry delivery or bounce the message.
 			// Swallowing the error would silently drop the email.
 			throw e;
