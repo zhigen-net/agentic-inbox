@@ -3,8 +3,8 @@
 ## 分支和部署（用户长期偏好：沿用 CRM-Lite 的方式）
 
 - 使用 Cloudflare Workers Builds 自动部署；部署命令是 `npm run cf:deploy`，构建命令留空、根目录为 `/`。
-- `dev` 分支对应独立测试 Worker，验证通过后再从 `dev` 合入 `main` 更新生产 Worker。
-- 功能分支从 `dev` 拉出，PR 指向 `dev`。不要直接推送 `main`，不要把功能分支直接合入生产。
+- 当前开发阶段（用户决定）：功能分支可以直接开 PR 合入 `main`，由生产 Worker 的 Workers Builds 自动部署；暂不要求先经过 `dev`。
+- `dev` 保留作为可选测试分支；以后启用独立测试环境时，再按用户指示恢复 dev → main 流程。
 - 每个环境关闭 Workers Builds 的 Preview Builds / Preview branches。它与 workers.dev 版本预览开关不是同一项设置。
 - GitHub Actions 只做测试和构建检查，不承担部署，不要求在 GitHub 保存 Cloudflare Secret。
 - 发布入口为 `scripts/cf-deploy.sh` / `scripts/cf-deploy.mjs`。Worker 名取 `WRANGLER_CI_OVERRIDE_NAME`，本地使用 `APP_NAME`。目标账户必须明确指定，不能假定当前默认账户正确。

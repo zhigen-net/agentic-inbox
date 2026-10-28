@@ -9,7 +9,7 @@
 | 测试 | `dev`    | `agentic-inbox-dev`（建议名称） |
 | 生产 | `main`   | 已有 `agentic-inbox`            |
 
-功能分支先开 PR 到 `dev` → 测试环境自动部署 → 验证通过后由 `dev` 开 PR 到 `main` → 生产自动部署。不要把功能分支直接合入生产。
+当前开发阶段按用户决定：功能分支可以直接开 PR 合入 `main`，由现有 `agentic-inbox` 的 Workers Builds 自动部署，暂不要求先经过 `dev`。`dev` 保留为可选测试分支；以后启用独立测试环境时，再恢复 dev → main 流程。
 
 每个 Worker 都必须关闭 **Preview Builds / Preview branches**；这与 workers.dev 的版本预览开关不是同一项设置。测试环境使用独立的 D1、R2 和 DO，不接入生产邮件投递。
 

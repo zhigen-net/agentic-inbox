@@ -84,7 +84,7 @@ For a read-only local resource check, set the target account and `APP_NAME`, the
 
 This fork adds internal team permissions. Administrators invite users and assign Editor or Viewer access to individual mailboxes, including shared mailboxes. API, AI Agent and MCP operations enforce the same grants. Cloudflare Access authenticates users; a D1 directory authorizes access. Uninvited users and service tokens cannot access mailboxes.
 
-**Deploy like CRM-Lite:** connect the repository through Cloudflare Workers Builds, leave Build command empty and set Deploy command to `npm run cf:deploy`. `dev` deploys to an isolated test Worker; promote `dev` to `main` for production. Disable preview builds. The deployment script reuses existing storage, provisions missing D1/R2 resources, builds the app, applies migrations and deploys with `--keep-vars`. No GitHub deployment secrets or manual database IDs are needed.
+**Deploy like CRM-Lite:** connect the repository through Cloudflare Workers Builds, leave Build command empty and set Deploy command to `npm run cf:deploy`. During the current development phase, feature PRs may merge directly into `main` to deploy the existing Worker. `dev` remains optional for a future isolated test environment. Disable preview builds. The deployment script reuses existing storage, provisions missing D1/R2 resources, builds the app, applies migrations and deploys with `--keep-vars`. No GitHub deployment secrets or manual database IDs are needed.
 
 Provide `POLICY_AUD`, `TEAM_DOMAIN` and `ADMIN_EMAILS` once as Worker Secrets or Builds secrets. Existing secrets are preserved. After the first upgrade, import legacy mailboxes from **Team administration**. Existing Mailbox Durable Objects and R2 attachments stay in place.
 
