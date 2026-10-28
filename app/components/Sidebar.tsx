@@ -80,12 +80,16 @@ export default function Sidebar() {
 	const createFolderMutation = useCreateFolder();
 	const { startCompose, closeSidebar } = useUIStore();
 	const { data: currentMailbox } = useMailbox(mailboxId);
+	const canWrite =
+		currentMailbox?.role === "admin" || currentMailbox?.role === "editor";
 	const [isCreateFolderOpen, setIsCreateFolderOpen] = useState(false);
 	const [newFolderName, setNewFolderName] = useState("");
 
 	const customFolders = useMemo(
 		() =>
-			folders.filter((f) => !(SYSTEM_FOLDER_IDS as readonly string[]).includes(f.id)),
+			folders.filter(
+				(f) => !(SYSTEM_FOLDER_IDS as readonly string[]).includes(f.id),
+			),
 		[folders],
 	);
 
@@ -146,17 +150,18 @@ export default function Sidebar() {
 			</div>
 
 			{/* Compose */}
-			<div className="px-3 py-3">
-				<Button
-					variant="primary"
-					icon={<PencilSimpleIcon size={16} />}
-					onClick={() => startCompose()}
-					className="w-full"
-				>
-					Compose
-				</Button>
-			</div>
-
+			{canWrite && (
+				<div className="px-3 py-3">
+					<Button
+						variant="primary"
+						icon={<PencilSimpleIcon size={16} />}
+						onClick={() => startCompose()}
+						className="w-full"
+					>
+						Compose
+					</Button>
+				</div>
+			)}
 			{/* Navigation */}
 			<nav className="flex-1 overflow-y-auto px-2 space-y-0.5">
 				{SYSTEM_FOLDER_LINKS.map((folder) => (
@@ -177,16 +182,18 @@ export default function Sidebar() {
 							<span className="text-xs uppercase tracking-wider font-semibold text-kumo-subtle">
 								Folders
 							</span>
-							<Tooltip content="New folder" asChild>
-								<Button
-									variant="ghost"
-									shape="square"
-									size="sm"
-									icon={<PlusIcon size={16} />}
-									onClick={() => setIsCreateFolderOpen(true)}
-									aria-label="Create new folder"
-								/>
-							</Tooltip>
+							{canWrite && (
+								<Tooltip content="New folder" asChild>
+									<Button
+										variant="ghost"
+										shape="square"
+										size="sm"
+										icon={<PlusIcon size={16} />}
+										onClick={() => setIsCreateFolderOpen(true)}
+										aria-label="Create new folder"
+									/>
+								</Tooltip>
+							)}
 						</div>
 						{customFolders.map((folder) => (
 							<FolderLink
@@ -208,16 +215,18 @@ export default function Sidebar() {
 							<span className="text-xs uppercase tracking-wider font-semibold text-kumo-subtle">
 								Folders
 							</span>
-							<Tooltip content="New folder" asChild>
-								<Button
-									variant="ghost"
-									shape="square"
-									size="sm"
-									icon={<PlusIcon size={16} />}
-									onClick={() => setIsCreateFolderOpen(true)}
-									aria-label="Create new folder"
-								/>
-							</Tooltip>
+							{canWrite && (
+								<Tooltip content="New folder" asChild>
+									<Button
+										variant="ghost"
+										shape="square"
+										size="sm"
+										icon={<PlusIcon size={16} />}
+										onClick={() => setIsCreateFolderOpen(true)}
+										aria-label="Create new folder"
+									/>
+								</Tooltip>
+							)}
 						</div>
 					</div>
 				)}

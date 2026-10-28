@@ -17,3 +17,7 @@ opencode.jsonc
 skills-lock.json
 .DS_Store
 worker-configuration.d.ts
+
+# Workers Builds 生成的临时配置与待初始化 Secrets，永不提交。
+wrangler.deploy.json
+.deploy-secrets.json

@@ -26,7 +26,8 @@ https://github.com/cloudflare/agentic-inbox/issues/4#issuecomment-4269118513
 2. **Configure Cloudflare Access** -- Enable [one-click Cloudflare Access](https://developers.cloudflare.com/changelog/post/2025-10-03-one-click-access-for-workers/) on your Worker under Settings > Domains & Routes. The modal will show your `POLICY_AUD` and `TEAM_DOMAIN` values. `TEAM_DOMAIN` can be either your Access team URL or the full `.../cdn-cgi/access/certs` URL. **You must set these as secrets for your Worker.**
 3. **Set up Email Routing** -- In the Cloudflare dashboard, go to your domain > Email Routing and create a catch-all rule that forwards to this Worker
 4. **Enable Email Service** -- The worker needs the `send_email` binding to send outbound emails. See [Email Service docs](https://developers.cloudflare.com/email-routing/email-workers/send-email-workers/)
-5. **Create a mailbox** -- Visit your deployed app and create a mailbox for any address on your domain (e.g. `hello@example.com`)
+5. **Configure team permissions** -- Follow [the team deployment guide](docs/team-deployment.zh-CN.md) to configure D1 and the bootstrap administrator before the first login.
+6. **Create a mailbox** -- Visit your deployed app and create a mailbox for any address on your domain (e.g. `hello@example.com`)
 
 ### Troubleshooting Access
 
@@ -53,20 +54,25 @@ https://github.com/cloudflare/agentic-inbox/issues/4#issuecomment-4269118513
 ## Getting Started
 
 ```bash
-npm install
+npm ci
+npx wrangler d1 migrations apply DIRECTORY --local
 npm run dev
 ```
 
 ### Configuration
 
 1. Set your domain in `wrangler.jsonc`
-2. Create an R2 bucket named `agentic-inbox`: `wrangler r2 bucket create agentic-inbox`
+2. Follow the Workers Builds guide below; the deployment script provisions or reuses storage automatically.
 
 ### Deploy
 
+Configure Cloudflare Workers Builds with the deploy command:
+
 ```bash
-npm run deploy
+npm run cf:deploy
 ```
+
+For a read-only local resource check, set the target account and `APP_NAME`, then run `npm run cf:deploy -- --plan`.
 
 ## Prerequisites
 
@@ -76,7 +82,13 @@ npm run deploy
 - [Workers AI](https://developers.cloudflare.com/workers-ai/) enabled (for the agent)
 - [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/policies/access/) configured for deployed/shared environments (required in production)
 
-Any user who passes the shared Cloudflare Access policy can access all mailboxes in this app by design. This includes the MCP server at `/mcp` -- external AI tools (Claude Code, Cursor, etc.) connected via MCP can operate on any mailbox by passing a `mailboxId` parameter. There is no per-mailbox authorization; the Cloudflare Access policy is the single trust boundary.
+This fork adds internal team permissions. Administrators invite users and assign Editor or Viewer access to individual mailboxes, including shared mailboxes. API, AI Agent and MCP operations enforce the same grants. Cloudflare Access authenticates users; a D1 directory authorizes access. Uninvited users and service tokens cannot access mailboxes.
+
+**Deploy like CRM-Lite:** connect the repository through Cloudflare Workers Builds, leave Build command empty and set Deploy command to `npm run cf:deploy`. During the current development phase, feature PRs may merge directly into `main` to deploy the existing Worker. `dev` remains optional for a future isolated test environment. Disable preview builds. The deployment script reuses existing storage, provisions missing D1/R2 resources, builds the app, applies migrations and deploys with `--keep-vars`. No GitHub deployment secrets or manual database IDs are needed.
+
+Provide `POLICY_AUD`, `TEAM_DOMAIN` and `ADMIN_EMAILS` once as Worker Secrets or Builds secrets. Existing secrets are preserved. After the first upgrade, import legacy mailboxes from **Team administration**. Existing Mailbox Durable Objects and R2 attachments stay in place.
+
+See [内部团队版 Workers Builds 部署](docs/team-deployment.zh-CN.md) for setup, permissions, multi-domain configuration, MCP compatibility and rollback steps. The original deploy button alone does not complete the Access/team setup.
 
 ## Architecture
 

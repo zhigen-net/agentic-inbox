@@ -1,3 +1,10 @@
 # Cloudflare Access (required in production). TEAM_DOMAIN may be the base Access URL or the full /cdn-cgi/access/certs URL.
 POLICY_AUD=your-access-policy-audience-tag
 TEAM_DOMAIN=https://your-team.cloudflareaccess.com
+
+# Bootstrap administrator Access login emails (comma-separated).
+# In production, set this with: wrangler secret put ADMIN_EMAILS
+ADMIN_EMAILS=admin@localhost.test
+
+# Local development only; match ADMIN_EMAILS if configured.
+DEV_USER_EMAIL=admin@localhost.test

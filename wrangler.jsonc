@@ -1,6 +1,6 @@
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
-	"name": "agentic-inbox",
+	"name": "placeholder-worker",
 	"compatibility_date": "2025-11-28",
 	"main": "./workers/app.ts",
 	"observability": {
@@ -10,12 +10,18 @@
 		"nodejs_compat"
 	],
 	"vars": {
-		// Production deploys must also define POLICY_AUD and TEAM_DOMAIN.
+		// Production deploys must also define POLICY_AUD, TEAM_DOMAIN and ADMIN_EMAILS secrets.
 		// TEAM_DOMAIN may be the base Access URL or the full /cdn-cgi/access/certs URL.
 		// The worker now fails closed outside local development if Access is not configured.
 		"DOMAINS": "ie8.net",
 		"EMAIL_ADDRESSES": []
 	},
+	"d1_databases": [{
+		"binding": "DIRECTORY",
+		"database_name": "placeholder-directory",
+		"database_id": "00000000-0000-0000-0000-000000000000",
+		"migrations_dir": "migrations"
+	}],
 	"send_email": [
 		{
 			"name": "EMAIL",
@@ -25,8 +31,8 @@
 	"r2_buckets": [
 		{
 			"binding": "BUCKET",
-			"bucket_name": "agentic-inbox",
-			"preview_bucket_name": "agentic-inbox"
+			"bucket_name": "placeholder-store",
+			"preview_bucket_name": "placeholder-store"
 		}
 	],
 	"ai": {

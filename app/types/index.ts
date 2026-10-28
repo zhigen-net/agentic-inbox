@@ -17,6 +17,7 @@ export interface MailboxSettings {
 }
 
 export interface Mailbox {
+	role: "admin" | "editor" | "viewer";
 	id: string;
 	email: string;
 	name: string;
