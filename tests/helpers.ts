@@ -19,6 +19,13 @@ export function fixture() {
 		),
 	);
 
+	sqlite.exec(
+		readFileSync(
+			new URL("../migrations/0003_domain_onboarding.sql", import.meta.url),
+			"utf8",
+		),
+	);
+
 	function prepare(sql: string) {
 		let values: any[] = [];
 		const statement = {

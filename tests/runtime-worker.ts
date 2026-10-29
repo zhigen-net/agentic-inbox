@@ -5,6 +5,7 @@ import { HTTPException } from "hono/http-exception";
 import { authorizeAgentPath } from "../workers/lib/auth";
 import { MailboxDO } from "../workers/durableObject";
 import { EmailAgent } from "../workers/agent";
+import migration3 from "../migrations/0003_domain_onboarding.sql";
 import migration2 from "../migrations/0002_accounts_addresses.sql";
 import migration from "../migrations/0001_team_directory.sql";
 import type { Env } from "../workers/types";
@@ -28,6 +29,12 @@ export default {
 					.filter(Boolean))
 					await env.DIRECTORY.prepare(sql).run();
 				await env.DIRECTORY.prepare("CREATE TRIGGER" + trigger).run();
+				for (const sql of migration3
+					.replace(/--[^\n]*/g, "")
+					.split(";")
+					.map((s) => s.trim())
+					.filter(Boolean))
+					await env.DIRECTORY.prepare(sql).run();
 				await env.DIRECTORY.prepare(
 					"INSERT INTO users (id,email) VALUES ('alice','alice@example.test'), ('bob','bob@example.test')",
 				).run();
@@ -120,7 +127,8 @@ export default {
 				// set-name initialization must remain reachable to trusted internal callers.
 				return Response.json({ initialized: !!agent });
 			}
-			if (path.startsWith("/api/")) return production.fetch(request, env, ctx);
+			if (path.startsWith("/api/") || path.startsWith("/ingress/"))
+				return production.fetch(request, env, ctx);
 			const principal = {
 				userId: request.headers.get("x-test-user") || "alice",
 				email: "",

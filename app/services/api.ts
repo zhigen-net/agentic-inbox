@@ -1,3 +1,9 @@
+import type {
+	DomainHealth,
+	DomainPlan,
+	DomainSetup,
+	ProviderConnection,
+} from "../../shared/domain-health";
 // Copyright (c) 2026 Cloudflare, Inc.
 // Licensed under the Apache 2.0 license found in the LICENSE file or at:
 //     https://opensource.org/licenses/Apache-2.0
@@ -18,9 +24,13 @@ export class ApiError extends Error {
 	}
 }
 
-async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
+async function request<T>(
+	url: string,
+	options: RequestInit = {},
+	timeoutMs = REQUEST_TIMEOUT_MS,
+): Promise<T> {
 	const controller = new AbortController();
-	const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+	const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
 	// Combine caller signal (e.g. TanStack Query abort) with our timeout signal
 	const signal = options.signal
@@ -70,12 +80,20 @@ function get<T>(
 	});
 }
 
-function post<T>(url: string, body?: unknown, opts?: { signal?: AbortSignal }) {
-	return request<T>(url, {
-		method: "POST",
-		signal: opts?.signal,
-		body: body != null ? JSON.stringify(body) : undefined,
-	});
+function post<T>(
+	url: string,
+	body?: unknown,
+	opts?: { signal?: AbortSignal; timeoutMs?: number },
+) {
+	return request<T>(
+		url,
+		{
+			method: "POST",
+			signal: opts?.signal,
+			body: body != null ? JSON.stringify(body) : undefined,
+		},
+		opts?.timeoutMs,
+	);
 }
 
 function put<T>(url: string, body?: unknown) {
@@ -116,7 +134,11 @@ export interface MailboxMember {
 	active: number;
 	role: "viewer" | "editor";
 }
-export interface Domain {
+export interface Domain extends Partial<DomainSetup> {
+	health_json?: string | null;
+	last_receive_at?: string | null;
+	last_send_at?: string | null;
+	last_send_error?: string | null;
 	name: string;
 	enabled: number;
 	receive_enabled: number;
@@ -130,6 +152,72 @@ export interface TeamMailbox {
 	active: number;
 }
 const api = {
+	domainConnections: () =>
+		get<{
+			connections: ProviderConnection[];
+			encryptionReady: boolean;
+			accountId: string | null;
+			workerName: string | null;
+		}>("/api/v1/admin/domain-connections"),
+	createDomainConnection: (data: unknown) =>
+		post("/api/v1/admin/domain-connections", data),
+	rotateDomainConnection: (id: string, token: string) =>
+		put(`/api/v1/admin/domain-connections/${id}`, { token }),
+	deleteDomainConnection: (id: string) =>
+		del(`/api/v1/admin/domain-connections/${id}`),
+	saveDomainSetup: (domain: string, data: unknown) =>
+		put(
+			`/api/v1/admin/domains/manage/${encodeURIComponent(domain)}/setup`,
+			data,
+		),
+	domainHealth: (domain: string) =>
+		post<DomainHealth>(
+			`/api/v1/admin/domains/manage/${encodeURIComponent(domain)}/health`,
+			undefined,
+			{ timeoutMs: 90000 },
+		),
+	domainPlan: (domain: string, enableSending: boolean) =>
+		post<DomainPlan>(
+			`/api/v1/admin/domains/manage/${encodeURIComponent(domain)}/plan`,
+			{ enableSending },
+			{ timeoutMs: 90000 },
+		),
+	applyDomainPlan: (domain: string, planId: string) =>
+		post(
+			`/api/v1/admin/domains/manage/${encodeURIComponent(domain)}/apply`,
+			{ planId },
+			{ timeoutMs: 120000 },
+		),
+	domainRelay: (domain: string, action: "deploy" | "credentials") =>
+		post<{
+			worker?: string;
+			endpoint?: string;
+			secret?: string;
+			protocol?: string;
+			source?: string;
+		}>(
+			`/api/v1/admin/domains/manage/${encodeURIComponent(domain)}/relay`,
+			{ action },
+			{ timeoutMs: 90000 },
+		),
+	domainProbe: (domain: string) =>
+		post<{ address: string; expiresAt: number }>(
+			`/api/v1/admin/domains/manage/${encodeURIComponent(domain)}/probe`,
+		),
+	domainProbeStatus: (domain: string) =>
+		get<{
+			address: string;
+			expires_at: number;
+			received_at: string | null;
+		} | null>(
+			`/api/v1/admin/domains/manage/${encodeURIComponent(domain)}/probe`,
+		),
+	domainTestSend: (domain: string, from: string, to: string) =>
+		post<{ note: string }>(
+			`/api/v1/admin/domains/manage/${encodeURIComponent(domain)}/test-send`,
+			{ from, to },
+		),
+
 	bootstrap: (email: string, password: string, token: string) =>
 		post("/api/auth/bootstrap", { email, password, token }),
 	authConfig: () =>
@@ -230,7 +318,7 @@ const api = {
 	listEmails: (
 		mailboxId: string,
 		params: Record<string, string>,
-		opts?: { signal?: AbortSignal },
+		opts?: { signal?: AbortSignal; timeoutMs?: number },
 	) =>
 		get<EmailListResponse | Email[]>(`/api/v1/mailboxes/${mailboxId}/emails`, {
 			params,
@@ -238,7 +326,11 @@ const api = {
 		}),
 	sendEmail: (mailboxId: string, email: unknown) =>
 		post<void>(`/api/v1/mailboxes/${mailboxId}/emails`, email),
-	getEmail: (mailboxId: string, id: string, opts?: { signal?: AbortSignal }) =>
+	getEmail: (
+		mailboxId: string,
+		id: string,
+		opts?: { signal?: AbortSignal; timeoutMs?: number },
+	) =>
 		get<Email>(`/api/v1/mailboxes/${mailboxId}/emails/${id}`, {
 			signal: opts?.signal,
 		}),
@@ -253,7 +345,7 @@ const api = {
 	getThread: (
 		mailboxId: string,
 		threadId: string,
-		opts?: { signal?: AbortSignal },
+		opts?: { signal?: AbortSignal; timeoutMs?: number },
 	) =>
 		get<Email[]>(`/api/v1/mailboxes/${mailboxId}/threads/${threadId}`, {
 			signal: opts?.signal,

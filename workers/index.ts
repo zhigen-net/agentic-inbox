@@ -320,7 +320,7 @@ app.post("/api/v1/mailboxes/:mailboxId/emails", async (c: AppContext) => {
 	);
 
 	c.executionCtx.waitUntil(
-		sendEmail(c.env.EMAIL, {
+		sendEmail(c.env, {
 			to,
 			cc,
 			bcc,
@@ -582,6 +582,13 @@ async function receiveEmail(
 	onNewEmail: (data: NewEmailData) => Promise<unknown>,
 ) {
 	const rawEmail = await streamToArrayBuffer(event.raw, event.rawSize);
+	const probe = await directory(env)
+		.prepare(
+			"UPDATE domain_probes SET received_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE address=? AND expires_at>? RETURNING address",
+		)
+		.bind(event.to.trim().toLowerCase(), Math.floor(Date.now() / 1000))
+		.first();
+	if (probe) return;
 	const parsedEmail = await new PostalMime().parse(rawEmail);
 
 	// The SMTP envelope determines delivery. To/Cc/Bcc headers are display metadata.
@@ -690,6 +697,13 @@ async function receiveEmail(
 	);
 
 	if (!created) return;
+	await directory(env)
+		.prepare(
+			"UPDATE domains SET last_receive_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE name=?",
+		)
+		.bind(deliveredTo.split("@")[1])
+		.run()
+		.catch(() => {});
 	ctx.waitUntil(
 		(async () => {
 			const settingsObject = await env.BUCKET.get(

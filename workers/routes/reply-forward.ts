@@ -120,7 +120,7 @@ export async function handleReplyEmail(c: AppContext) {
 	await stub.markThreadRead(thread_id);
 
 	c.executionCtx.waitUntil(
-		sendEmail(c.env.EMAIL, {
+		sendEmail(c.env, {
 			to,
 			cc,
 			bcc,
@@ -224,7 +224,7 @@ export async function handleForwardEmail(c: AppContext) {
 	);
 
 	c.executionCtx.waitUntil(
-		sendEmail(c.env.EMAIL, {
+		sendEmail(c.env, {
 			to,
 			cc,
 			bcc,
