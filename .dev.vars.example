@@ -9,3 +9,7 @@ ADMIN_EMAILS=admin@localhost.test
 
 # New installs/local setup only: generate a random value of at least 32 characters.
 BOOTSTRAP_TOKEN=
+
+# Local development only: 32+ random characters to encrypt domain provider credentials.
+# Production deployment creates this Secret automatically if absent and preserves it thereafter.
+DOMAIN_CONFIG_KEY=

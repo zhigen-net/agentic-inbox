@@ -8,11 +8,13 @@ import {
 	ensureLegacyDirectory,
 	normalizeDomain,
 } from "../domain/mailboxes";
+import { domainApp } from "./domain-onboarding";
 export const managementApp = new Hono<MailboxContext>();
 managementApp.use("/api/v1/admin/*", async (c, next) => {
 	await requireAdmin(c.env, c.var.principal);
 	await next();
 });
+managementApp.route("/", domainApp);
 managementApp.get("/api/v1/admin/settings", async (c) => {
 	const row = await directory(c.env)
 		.prepare("SELECT value FROM app_settings WHERE key='registration_mode'")
@@ -147,34 +149,16 @@ managementApp.put("/api/v1/admin/domains/manage/:domain", async (c) => {
 });
 managementApp.post("/api/v1/admin/domains/manage/:domain/check", async (c) => {
 	const name = normalizeDomain(c.req.param("domain"));
-	if (
-		!(await directory(c.env)
-			.prepare("SELECT name FROM domains WHERE name=?")
-			.bind(name)
-			.first())
-	)
-		return c.json({ error: "域名不存在" }, 404);
-	const response = await fetch(
-		`https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(name)}&type=MX`,
-		{
-			headers: { Accept: "application/dns-json" },
-			signal: AbortSignal.timeout(10000),
-		},
-	);
-	if (!response.ok) return c.json({ error: "DNS 检测暂不可用" }, 502);
-	const result = (await response.json()) as { Answer?: { data: string }[] };
-	const verified = !!result.Answer?.some((a) =>
-		/\broute[0-9]*\.mx\.cloudflare\.net\.?$/i.test(a.data),
-	);
-	await directory(c.env)
-		.prepare(
-			"UPDATE domains SET mx_verified=?,checked_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE name=?",
-		)
-		.bind(Number(verified), name)
-		.run();
+	const { domainRow, inspectDomain, saveHealth } =
+		await import("../domain/domain-health");
+	const result = await inspectDomain(c.env, await domainRow(c.env, name));
+	await saveHealth(c.env, name, result.health);
 	return c.json({
-		mxVerified: verified,
-		note: "MX 检测不代表发信已通过验证，仍需在 Cloudflare 配置 Email Routing 和 Email Service。",
+		mxVerified: result.health.checks.some(
+			(x) => x.id === "mx" && x.state === "passed",
+		),
+		note: "完整检测已更新，收发开关与实际验证结果独立显示",
+		health: result.health,
 	});
 });
 managementApp.put("/api/v1/admin/mailboxes/:mailboxId/addresses", async (c) =>

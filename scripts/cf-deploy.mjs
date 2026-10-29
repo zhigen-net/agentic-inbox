@@ -2,6 +2,7 @@ import { readFile, writeFile, rm } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { randomBytes } from "node:crypto";
 import { parse } from "jsonc-parser";
 import { fetch, EnvHttpProxyAgent } from "undici";
 
@@ -11,6 +12,7 @@ const SECRET_NAMES = [
 	"POLICY_AUD",
 	"TEAM_DOMAIN",
 	"BOOTSTRAP_TOKEN",
+	"DOMAIN_CONFIG_KEY",
 ];
 const REQUIRED_SECRETS = ["ADMIN_EMAILS"];
 
@@ -47,6 +49,8 @@ export function makeConfig(source, settings, databases, env) {
 			.map((b) => [b.name, b.type === "json" ? b.json : b.text]),
 	);
 	config.vars = { ...config.vars, ...liveVars };
+	config.vars.INBOX_ACCOUNT_ID = env.CLOUDFLARE_ACCOUNT_ID;
+	config.vars.INBOX_WORKER_NAME = name;
 	if (env.INBOX_DOMAINS) config.vars.DOMAINS = env.INBOX_DOMAINS;
 	if (!config.vars.DOMAINS?.split(",").some((d) => d.trim()))
 		throw new Error(
@@ -96,7 +100,14 @@ export function makeConfig(source, settings, databases, env) {
 	const missingSecrets = REQUIRED_SECRETS.filter(
 		(key) => !existingSecrets.has(key) && !secrets[key],
 	);
-	return { config, secrets, missingSecrets, createDatabase: !database };
+	return {
+		config,
+		secrets,
+		missingSecrets,
+		createDatabase: !database,
+		initializeDomainKey:
+			!existingSecrets.has("DOMAIN_CONFIG_KEY") && !secrets.DOMAIN_CONFIG_KEY,
+	};
 }
 
 export function cloudflareClient(env, fetchImpl = fetch) {
@@ -196,6 +207,8 @@ export async function deploy({
 		);
 	const generated = path.join(ROOT, "wrangler.deploy.json");
 	const secretFile = path.join(ROOT, ".deploy-secrets.json");
+	if (plan.initializeDomainKey)
+		secrets.DOMAIN_CONFIG_KEY = randomBytes(32).toString("hex");
 	const buildEnv = { ...env, INBOX_DEPLOY_CONFIG: generated };
 	try {
 		await rm(generated, { force: true });

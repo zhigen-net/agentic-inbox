@@ -12,6 +12,9 @@ export interface Env extends Omit<
 	ADMIN_EMAILS: string;
 	DEV_USER_EMAIL?: string;
 	BOOTSTRAP_TOKEN?: string;
+	DOMAIN_CONFIG_KEY?: string;
+	INBOX_ACCOUNT_ID?: string;
+	INBOX_WORKER_NAME?: string;
 	POLICY_AUD: string;
 	TEAM_DOMAIN: string;
 }

@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { builtinModules } from "node:module";
 import { build } from "esbuild";
 import { Miniflare } from "miniflare";
+import { signature, digest } from "../workers/domain/infrastructure";
 
 test(
 	"workerd: actual D1, Mailbox DO idempotency/rollback, user-scoped Agent history and live WebSocket revocation",
@@ -70,6 +71,7 @@ test(
 				EMAIL_ADDRESSES: [],
 				ADMIN_EMAILS: "admin@example.test",
 				BOOTSTRAP_TOKEN: "x".repeat(48),
+				DOMAIN_CONFIG_KEY: "runtime-only-domain-key".repeat(3),
 			},
 		});
 		try {
@@ -157,6 +159,65 @@ test(
 				)
 			).json()) as any;
 			assert.equal(storedDraft.sender, "native@other.test");
+
+			const relayCredentials = await native(
+				"/api/v1/admin/domains/manage/other.test/relay",
+				"POST",
+				{ action: "credentials" },
+			);
+			assert.equal(
+				relayCredentials.status,
+				200,
+				await relayCredentials.clone().text(),
+			);
+			const relay = (await relayCredentials.json()) as any;
+			const probeResponse = await native(
+				"/api/v1/admin/domains/manage/other.test/probe",
+				"POST",
+			);
+			const probe = (await probeResponse.json()) as any;
+			const raw =
+				"From: outside@example.test\r\nSubject: runtime signed probe\r\n\r\nHello";
+			const timestamp = String(Math.floor(Date.now() / 1000)),
+				requestId = crypto.randomUUID();
+			const sig = await signature(
+				relay.secret,
+				[
+					timestamp,
+					requestId,
+					"outside@example.test",
+					probe.address,
+					await digest(raw),
+				].join("\n"),
+			);
+			const ingress = await fetch("/ingress/email/other.test", {
+				method: "POST",
+				headers: {
+					"X-Inbox-Time": timestamp,
+					"X-Inbox-Id": requestId,
+					"X-Inbox-From": "outside@example.test",
+					"X-Inbox-To": probe.address,
+					"X-Inbox-Signature": sig,
+				},
+				body: raw,
+			});
+			assert.equal(ingress.status, 200, await ingress.clone().text());
+			assert.ok(
+				(
+					(await (
+						await native("/api/v1/admin/domains/manage/other.test/probe")
+					).json()) as any
+				).received_at,
+			);
+			assert.equal(
+				(
+					await fetch("/ingress/email/other.test", {
+						method: "POST",
+						body: raw,
+					})
+				).status,
+				401,
+			);
 
 			const crossOrigin = await fetch("/api/auth/logout", {
 				method: "POST",

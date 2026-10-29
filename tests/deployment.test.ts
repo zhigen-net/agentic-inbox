@@ -120,7 +120,10 @@ test("automatic deployment creates missing resources, builds before migration, d
 			if (args[0] === "wrangler" && args[1] === "deploy") {
 				assert.ok(args.includes("--keep-vars"));
 				const secretFile = args[args.indexOf("--secrets-file") + 1];
-				assert.deepEqual(JSON.parse(await readFile(secretFile, "utf8")), {
+				const payload = JSON.parse(await readFile(secretFile, "utf8"));
+				assert.match(payload.DOMAIN_CONFIG_KEY, /^[a-f0-9]{64}$/);
+				delete payload.DOMAIN_CONFIG_KEY;
+				assert.deepEqual(payload, {
 					POLICY_AUD: "audience",
 					TEAM_DOMAIN: "https://team.example.test",
 					ADMIN_EMAILS: "admin@example.test",
@@ -193,5 +196,27 @@ test("missing secrets, API permission failures and migration failures cannot pub
 	);
 	await assert.rejects(
 		access(new URL("../wrangler.deploy.json", import.meta.url)),
+	);
+});
+
+test("domain credential key is initialized only when missing and target identity is explicit", () => {
+	const p = makeConfig(
+		source,
+		{
+			bindings: [
+				...secrets,
+				{ name: "DOMAIN_CONFIG_KEY", type: "secret_text" },
+			],
+		},
+		[],
+		env,
+	);
+	assert.equal(p.initializeDomainKey, false);
+	assert.deepEqual(p.secrets, {});
+	assert.equal(p.config.vars.INBOX_ACCOUNT_ID, env.CLOUDFLARE_ACCOUNT_ID);
+	assert.equal(p.config.vars.INBOX_WORKER_NAME, "inbox-dev");
+	assert.equal(
+		makeConfig(source, { bindings: secrets }, [], env).initializeDomainKey,
+		true,
 	);
 });

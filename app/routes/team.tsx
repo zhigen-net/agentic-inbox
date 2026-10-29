@@ -627,6 +627,15 @@ function formatDate(value: string) {
 }
 function actionLabel(action: string) {
 	const labels: Record<string, string> = {
+		"connection.create": "添加服务连接",
+		"connection.rotate": "更新服务令牌",
+		"connection.delete": "删除服务连接",
+		"domain.setup": "设置域名接入",
+		"domain.apply": "执行域名配置",
+		"domain.apply-failed": "域名配置部分失败",
+		"domain.relay-deploy": "部署域名接入 Worker",
+		"domain.relay-credentials": "查看域名接入参数",
+		"domain.test-send": "发送域名测试邮件",
 		"account.login": "账号登录",
 		"account.bootstrap": "初始化管理员",
 		"account.register": "注册账号",

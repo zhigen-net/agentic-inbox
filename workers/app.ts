@@ -16,6 +16,7 @@ import {
 	type AuthVariables,
 } from "./lib/auth";
 import { getCookie } from "hono/cookie";
+import { ingressApp } from "./routes/ingress";
 import { accountsApp } from "./routes/accounts";
 import { SESSION_COOKIE, sessionPrincipal } from "./domain/accounts";
 import type { Env } from "./types";
@@ -63,6 +64,8 @@ app.onError((error, c) => {
 	console.error("Request failed:", error.message);
 	return c.json({ error: "Internal server error" }, 500);
 });
+
+app.route("/", ingressApp);
 
 // Require same-origin browser writes, including Agent WebSocket handshakes.
 app.use("*", async (c, next) => {

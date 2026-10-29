@@ -1084,3 +1084,20 @@ body {
     display: none;
   }
 }
+.domain-wizard {
+  min-width: 0 !important;
+  width: min(760px, calc(100vw - 32px));
+}
+.domain-wizard-tab {
+  padding: 0 0 12px;
+  border-bottom: 2px solid transparent;
+  font-size: 12px;
+  white-space: nowrap;
+  color: var(--text-color-kumo-subtle);
+  cursor: pointer;
+}
+.domain-wizard-tab.is-active {
+  border-color: #d96524;
+  color: var(--text-color-kumo-default);
+  font-weight: 600;
+}
