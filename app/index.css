@@ -841,55 +841,6 @@ body {
 }
 
 /* Mailbox overview: reserve the page for mailbox scanning and entry. */
-.mailbox-workspace {
-  min-height: 100dvh;
-  background: var(--color-kumo-base);
-}
-.mailbox-workspace-header {
-  height: 60px;
-  display: flex;
-  align-items: center;
-  gap: 35px;
-  padding: 0 32px;
-  border-bottom: 1px solid var(--color-kumo-line);
-}
-.mailbox-workspace-header .portal-brand {
-  font-size: 20px;
-  padding: 0;
-}
-.mailbox-workspace-header .brand-symbol {
-  width: 30px;
-  height: 30px;
-  border-radius: 9px;
-}
-.mailbox-workspace-nav {
-  display: flex;
-  align-self: stretch;
-  gap: 25px;
-  align-items: center;
-}
-.mailbox-workspace-nav a {
-  font-size: 12px;
-  color: var(--text-color-kumo-subtle);
-  height: 100%;
-  display: flex;
-  align-items: center;
-  border-bottom: 2px solid transparent;
-}
-.mailbox-workspace-nav a.active {
-  color: var(--text-color-kumo-default);
-  border-bottom-color: #d96524;
-  font-weight: 600;
-}
-.mailbox-workspace-account {
-  margin-left: auto;
-  width: 160px;
-}
-.mailbox-workspace-content {
-  max-width: 1360px;
-  margin: auto;
-  padding: 28px 32px 48px;
-}
 .mailbox-overview-heading {
   display: flex;
   align-items: center;
@@ -1064,7 +1015,7 @@ body {
 @media (max-width: 900px) {
   .mailbox-overview-columns,
   .mailbox-overview-row {
-    grid-template-columns: minmax(180px, 1fr) 95px 45px 150px;
+    grid-template-columns: minmax(0, 1fr) 95px 45px 150px;
     gap: 12px;
   }
   .mailbox-overview-actions {
@@ -1075,38 +1026,6 @@ body {
   }
 }
 @media (max-width: 650px) {
-  .mailbox-workspace-header {
-    padding: 0 16px;
-    height: 54px;
-    gap: 20px;
-  }
-  .mailbox-workspace-header .portal-brand {
-    font-size: 18px;
-    gap: 7px;
-  }
-  .mailbox-workspace-header .brand-symbol {
-    width: 26px;
-    height: 26px;
-  }
-  .mailbox-workspace-account {
-    width: auto;
-  }
-  .mailbox-workspace-account .account-trigger {
-    padding: 4px;
-  }
-  .mailbox-workspace-account .account-trigger > .min-w-0,
-  .mailbox-workspace-account .account-trigger > svg {
-    display: none;
-  }
-  .mailbox-workspace-nav {
-    gap: 15px;
-  }
-  .mailbox-workspace-nav a {
-    font-size: 11px;
-  }
-  .mailbox-workspace-content {
-    padding: 22px 16px 36px;
-  }
   .mailbox-overview-heading {
     margin-bottom: 17px;
   }

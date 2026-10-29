@@ -37,7 +37,7 @@ export default function Home() {
 	);
 	const unread = boxes.reduce((n, m) => n + (m.unreadCount || 0), 0);
 	return (
-		<PortalShell focused>
+		<PortalShell>
 			<div className="mailbox-overview-heading">
 				<div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
 					<h1>我的邮箱</h1>
