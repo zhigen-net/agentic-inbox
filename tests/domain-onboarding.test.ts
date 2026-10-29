@@ -707,3 +707,30 @@ test("changing the receive provider revokes old relay keys and marks older activ
 		n.restore();
 	}
 });
+
+test("failed Zone lookup reports safe root cause without cascading routing blockers", async () => {
+	for (const failure of ["decrypt", "denied", "timeout"] as const) {
+		const f = setup();
+		await connect(f);
+		if (failure === "decrypt") f.env.DOMAIN_CONFIG_KEY = "different-key".repeat(5);
+		const n = network();
+		const mock = globalThis.fetch;
+		globalThis.fetch = async (input: any, init?: any) => {
+			if (String(input).includes("api.cloudflare.com")) {
+				if (failure === "timeout") throw new DOMException("private-network-detail", "TimeoutError");
+				return new Response(JSON.stringify({success: false, errors: [{code: 9109, message: "private-provider-detail"}]}), {status: 403});
+			}
+			return mock(input, init);
+		};
+		try {
+			const r = await f.request("/api/v1/admin/domains/manage/ie8.net/plan", "POST", {});
+			const p = await r.json() as any;
+			assert.equal(r.status, 200);
+			assert.equal(p.blockers.length, 1);
+			assert.match(p.blockers[0], failure === "decrypt" ? /凭据无法解密/ : failure === "denied" ? /HTTP 403.*9109/ : /超时/);
+			assert.deepEqual(p.changes, []);
+			assert.doesNotMatch(JSON.stringify(p), /private-provider-detail|private-network-detail|test-only-token/);
+			assert.equal(n.writes.length, 0);
+		} finally { n.restore(); }
+	}
+});

@@ -70,7 +70,7 @@ export async function connection(env: Env, id: string | null) {
 		: null;
 }
 export class ProviderError extends Error {
-	constructor(public status: number) {
+	constructor(public status: number, public codes: number[] = []) {
 		super(
 			status === 401 || status === 403
 				? "服务授权不足或令牌无效"
@@ -110,7 +110,14 @@ export async function provider(
 		redirect: "error",
 		signal: AbortSignal.timeout(15000),
 	});
-	if (!response.ok) throw new ProviderError(response.status);
+	if (!response.ok) {
+		// Only numeric provider codes are safe to persist; never expose response bodies.
+		const error = await response.json().catch(() => null) as any;
+		const codes = c.provider === "cloudflare" && Array.isArray(error?.errors)
+			? error.errors.map((e: any) => e.code).filter((v: unknown): v is number => typeof v === "number")
+			: [];
+		throw new ProviderError(response.status, codes);
+	}
 	const data = (await response.json()) as any;
 	if (c.provider === "cloudflare" && !data.success)
 		throw new ProviderError(502);
