@@ -77,8 +77,14 @@ function failed(id: string, label: string, e: unknown): DomainCheck {
 				: "error",
 		detail:
 			e instanceof ProviderError
-				? e.message
-				: "检测暂不可用，请重试；不会据此判定配置缺失",
+				? `${e.message}（HTTP ${e.status}${e.codes.length ? `；Cloudflare 错误码 ${e.codes.join(", ")}` : ""}）`
+				: e instanceof HTTPException && e.status === 503
+					? "连接凭据不可用：加密密钥未配置或凭据无法解密，请重新保存服务连接令牌"
+					: e instanceof Error && ["TimeoutError", "AbortError"].includes(e.name)
+						? "连接 Cloudflare 超时，请稍后重新检测"
+						: e instanceof TypeError
+							? "服务请求未完成：请检查令牌是否含空格、换行或非英文字符；也可能是网络连接失败"
+							: "检测暂不可用，请重试；不会据此判定配置缺失",
 	};
 }
 export async function inspectDomain(env: Env, row: DomainRow) {
@@ -586,15 +592,15 @@ export async function configurationPlan(
 		s.connection?.provider !== "cloudflare" ||
 		!s.zone
 	)
-		blockers.push("自动配置需要有效的 Cloudflare 连接与匹配的 Zone");
+		blockers.push(`无法核实域名所属 Zone：${s.health.checks.find((x) => x.id === "zone")?.detail || "请先保存有效的 Cloudflare 连接"}`);
 	if (s.zone && (s.zone.status !== "active" || s.zone.name !== row.name))
 		blockers.push(
 			"自动配置仅用于已激活的独立 Zone 根域名；子域名请按服务商向导配置，不修改父域名 Catch-all",
 		);
-	for (const id of ["mx", "spf", "routing", "catch_all", "rules"]) {
+	for (const id of s.zone ? ["mx", "spf", "routing", "catch_all", "rules"] : ["mx", "spf"]) {
 		const x = s.health.checks.find((x) => x.id === id);
 		if (!x || ["error", "permission", "unknown"].includes(x.state))
-			blockers.push(`无法完整读取 ${x?.label || id}，请先补齐权限或重新检测`);
+			blockers.push(`无法完整读取 ${x?.label || id}：${x?.detail || "请重新检测"}`);
 	}
 	if (s.data.mx?.length && !cloudflareMX(s.data.mx))
 		blockers.push(
@@ -617,14 +623,14 @@ export async function configurationPlan(
 		warnings.push(
 			"已有独立地址规则保持不变，可能优先于 Catch-all，请核对这些地址",
 		);
-	if (!s.health.workerName)
+	if (s.zone && !s.health.workerName)
 		blockers.push("未确定目标 Worker，请检查部署环境配置");
 	if (
 		s.health.crossAccount &&
 		!s.health.checks.some((x) => x.id === "relay" && x.state === "passed")
 	)
 		blockers.push("先部署跨账户接入 Worker，再生成自动配置预览");
-	if (!s.health.requiredRecords.length)
+	if (s.zone && !s.health.requiredRecords.length)
 		blockers.push("未取得 Cloudflare 要求的 DNS 记录，无法生成自动配置");
 	if (
 		s.health.checks.some((x) => x.id === "routing" && x.state !== "passed") ||
@@ -637,7 +643,7 @@ export async function configurationPlan(
 		!s.health.checks.some((x) => x.id === "catch_all" && x.state === "passed")
 	)
 		changes.push(`设置 Catch-all → ${s.health.workerName || "未确定"}`);
-	if (enableSending) {
+	if (enableSending && s.zone) {
 		if (row.send_connection_id && row.send_connection_id !== row.connection_id)
 			blockers.push(
 				"独立发信连接请在对应服务商完成开通，本预览只配置所选 Cloudflare 账户",
@@ -673,7 +679,7 @@ export async function configurationPlan(
 		...s,
 		blockers: [...new Set(blockers)],
 		warnings,
-		changes,
+		changes: s.zone ? changes : [],
 		fingerprint,
 	};
 }
