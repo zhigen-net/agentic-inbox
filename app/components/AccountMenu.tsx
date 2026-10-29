@@ -37,7 +37,12 @@ export default function AccountMenu({
 					</span>
 					<CaretUpDownIcon size={14} className="shrink-0 text-kumo-subtle" />
 				</DropdownMenu.Trigger>
-				<DropdownMenu.Content side="top" align="end" className="w-64">
+				<DropdownMenu.Content
+					style={{ zIndex: 60 }}
+					side="top"
+					align="end"
+					className="w-64"
+				>
 					<DropdownMenu.Group>
 						<DropdownMenu.Label>
 							<span className="block truncate">{me?.email}</span>

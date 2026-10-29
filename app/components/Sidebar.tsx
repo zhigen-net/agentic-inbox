@@ -167,6 +167,7 @@ export default function Sidebar() {
 						<CaretUpDownIcon size={15} className="shrink-0 text-kumo-subtle" />
 					</DropdownMenu.Trigger>
 					<DropdownMenu.Content
+						style={{ zIndex: 60 }}
 						align="start"
 						className="w-72 max-h-[70dvh] overflow-y-auto"
 					>
