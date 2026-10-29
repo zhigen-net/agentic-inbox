@@ -541,6 +541,12 @@ test("cross-account deployment refuses unrelated Workers and uploads only domain
 				(x: any) => x.name === "BRIDGE_KEY" && x.type === "secret_text",
 			),
 		);
+		assert.equal(
+			metadata.bindings.find((x: any) => x.name === "INBOX_KEY_HASH").text,
+			await digest(
+				metadata.bindings.find((x: any) => x.name === "BRIDGE_KEY").text,
+			),
+		);
 		assert.ok(
 			metadata.bindings.some(
 				(x: any) => x.name === "INBOX_DOMAIN" && x.text === "ie8.net",

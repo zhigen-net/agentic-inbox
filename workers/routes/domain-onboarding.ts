@@ -391,6 +391,11 @@ domainApp.post(base + "/relay", async (c) => {
 					text: c.env.INBOX_WORKER_NAME,
 				},
 				{ name: "BRIDGE_KEY", type: "secret_text", text: secret },
+				{
+					name: "INBOX_KEY_HASH",
+					type: "plain_text",
+					text: await digest(secret),
+				},
 			],
 		}),
 	);

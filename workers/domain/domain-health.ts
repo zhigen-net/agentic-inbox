@@ -3,6 +3,7 @@ import type { Env } from "../types";
 import { directory } from "../lib/auth";
 import {
 	connection,
+	unseal,
 	provider,
 	ProviderError,
 	digest,
@@ -328,7 +329,17 @@ export async function inspectDomain(env: Env, row: DomainRow) {
 						`/accounts/${c.account_id}/workers/scripts/${worker}/settings`,
 					);
 					const b = r.bindings || [];
+					const expectedKeyHash = row.relay_key
+						? await digest(
+								await unseal(env, row.relay_key, "relay:" + row.name),
+							)
+						: null;
 					const ok =
+						!!expectedKeyHash &&
+						b.some(
+							(x: any) =>
+								x.name === "INBOX_KEY_HASH" && x.text === expectedKeyHash,
+						) &&
 						r.tags?.includes("agentic-inbox-domain-relay") &&
 						b.some(
 							(x: any) => x.name === "INBOX_DOMAIN" && x.text === row.name,
@@ -346,10 +357,10 @@ export async function inspectDomain(env: Env, row: DomainRow) {
 					checks.push({
 						id: "relay",
 						label: "跨账户接入 Worker",
-						state: ok ? "passed" : "warning",
+						state: ok ? "passed" : row.relay_key ? "warning" : "missing",
 						detail: ok
 							? "已部署本站专用接入 Worker；仍需实际收信验证"
-							: "同名 Worker 不属于此域名接入配置，禁止覆盖",
+							: "Worker 归属或接入密钥不匹配，需要核对配置并重新部署；不覆盖其他归属的脚本",
 					});
 				} catch (e) {
 					checks.push(
