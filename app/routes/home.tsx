@@ -1,282 +1,192 @@
-import { Button, Dialog, Input } from "@cloudflare/kumo";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState, type FormEvent } from "react";
+import { Button } from "@cloudflare/kumo";
+import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { Link } from "react-router";
+import {
+	ArrowRightIcon,
+	EnvelopeSimpleIcon,
+	PlusIcon,
+	TrayIcon,
+	GlobeIcon,
+} from "@phosphor-icons/react";
 import api from "~/services/api";
 import { useMailboxes } from "~/queries/mailboxes";
 import { useMe } from "~/queries/team";
+import PortalShell, {
+	PageHeading,
+	StatusPill,
+	Notice,
+	EmptyState,
+	SearchField,
+} from "~/components/portal/PortalShell";
+import CreateMailboxDialog from "~/components/portal/CreateMailboxDialog";
+
 export default function Home() {
-	const { data: me } = useMe(),
-		mailboxes = useMailboxes(),
-		qc = useQueryClient();
+	const { data: me } = useMe();
+	const mailboxes = useMailboxes();
 	const config = useQuery({ queryKey: ["config"], queryFn: api.getConfig });
 	const auth = useQuery({ queryKey: ["auth-config"], queryFn: api.authConfig });
-	const users = useQuery({
-		queryKey: ["team-users"],
-		queryFn: api.listUsers,
-		enabled: me?.role === "admin",
-	});
-	const [open, setOpen] = useState(false),
-		[name, setName] = useState(""),
-		[prefix, setPrefix] = useState(""),
-		[domains, setDomains] = useState<string[]>([]),
-		[primary, setPrimary] = useState(""),
-		[owner, setOwner] = useState("");
-	const [busy, setBusy] = useState(false),
-		[error, setError] = useState("");
-	function toggle(domain: string) {
-		setDomains((old) =>
-			old.includes(domain) ? old.filter((d) => d !== domain) : [...old, domain],
-		);
-	}
-	async function create(e: FormEvent) {
-		e.preventDefault();
-		setBusy(true);
-		setError("");
-		try {
-			await api.createMultiMailbox({
-				name: name || prefix,
-				prefix,
-				domains,
-				defaultAddress:
-					primary && domains.includes(primary)
-						? `${prefix}@${primary}`
-						: undefined,
-				ownerId: owner || undefined,
-			});
-			await qc.invalidateQueries({ queryKey: ["mailboxes"] });
-			setOpen(false);
-			setName("");
-			setPrefix("");
-			setDomains([]);
-			setPrimary("");
-		} catch (e) {
-			setError(e instanceof Error ? e.message : "创建失败");
-		} finally {
-			setBusy(false);
-		}
-	}
+	const [open, setOpen] = useState(false);
+	const [search, setSearch] = useState("");
+	const boxes = mailboxes.data || [];
+	const filtered = boxes.filter((m) =>
+		`${m.name} ${m.email} ${m.addresses?.map((a) => a.address).join(" ") || ""}`
+			.toLowerCase()
+			.includes(search.toLowerCase()),
+	);
+	const unread = boxes.reduce((n, m) => n + (m.unreadCount || 0), 0);
 	return (
-		<main className="min-h-screen bg-kumo-recessed px-4 py-8">
-			<div className="mx-auto max-w-3xl space-y-6">
-				<header className="flex flex-wrap items-center justify-between gap-3">
-					<h1 className="text-2xl font-bold">我的邮箱</h1>
-					<nav className="flex gap-4 text-sm">
-						{me?.role === "admin" && (
-							<Link to="/team" className="underline">
-								管理后台
-							</Link>
-						)}
-						<Link to="/account" className="underline">
-							账号设置
-						</Link>
-					</nav>
-				</header>
-				{auth.data?.user && !auth.data.user.hasPassword && (
-					<p className="rounded border border-kumo-line bg-kumo-base p-3 text-sm">
-						当前通过 Access 登录。
-						<Link to="/account" className="underline">
-							先设置独立登录密码
-						</Link>
-						，再调整外层访问策略。
-					</p>
-				)}
-				<div className="flex items-center justify-between gap-3">
-					<p className="text-sm text-kumo-subtle">
-						{me?.email} · {me?.role === "admin" ? "管理员" : "成员"}
-					</p>
-					{config.data?.canCreate && (
+		<PortalShell>
+			<PageHeading
+				eyebrow="YOUR WORKSPACE"
+				title="我的邮箱"
+				description="所有邮件，各归其位。选择一个邮箱，开始今天的工作。"
+				action={
+					config.data?.canCreate && (
 						<Button
 							variant="primary"
-							onClick={() => {
-								setOpen(true);
-								setError("");
-							}}
+							icon={<PlusIcon size={16} />}
+							onClick={() => setOpen(true)}
 						>
 							创建邮箱
 						</Button>
-					)}
-				</div>
-				{(mailboxes.error || config.error) && (
-					<p role="alert" className="text-kumo-error">
-						{(mailboxes.error || config.error)?.message}
-					</p>
-				)}
-				{mailboxes.isLoading ? (
-					<p>正在加载邮箱…</p>
-				) : !mailboxes.data?.length ? (
-					<div className="rounded-xl border border-kumo-line bg-kumo-base p-8">
-						<h2 className="font-semibold">暂时没有邮箱</h2>
-						<p className="mt-2 text-sm text-kumo-subtle">
-							{config.data?.canCreate
-								? "可以自行创建邮箱，或由管理员分配。"
-								: "请联系管理员分配邮箱或开通创建权限。"}
-						</p>
+					)
+				}
+			/>
+			{auth.data?.user && !auth.data.user.hasPassword && (
+				<Notice>
+					<span className="flex flex-wrap items-center justify-between gap-2">
+						<span>为账号设置独立密码，之后可使用邮箱和密码登录。</span>
+						<Link
+							to="/account"
+							className="font-medium inline-flex items-center gap-1"
+						>
+							前往设置 <ArrowRightIcon size={14} />
+						</Link>
+					</span>
+				</Notice>
+			)}
+			<div className="portal-stats">
+				{[
+					{ icon: EnvelopeSimpleIcon, value: boxes.length, label: "可用邮箱" },
+					{ icon: TrayIcon, value: unread, label: "未读邮件" },
+					{
+						icon: GlobeIcon,
+						value: boxes.reduce(
+							(n, m) => n + (m.addresses?.filter((a) => a.active).length || 1),
+							0,
+						),
+						label: "收发地址",
+					},
+				].map(({ icon: Icon, value, label }) => (
+					<div className="portal-stat" key={label}>
+						<span className="portal-stat-icon">
+							<Icon size={21} />
+						</span>
+						<div>
+							<strong>{mailboxes.isLoading ? "—" : value}</strong>
+							<p>{label}</p>
+						</div>
 					</div>
-				) : (
-					<div className="space-y-3">
-						{mailboxes.data.map((m) => (
-							<div
+				))}
+			</div>
+			<div className="portal-toolbar">
+				<div className="flex items-center gap-3">
+					<h2 className="portal-section-title">邮箱列表</h2>
+					<span className="text-xs text-kumo-subtle">{boxes.length} 个</span>
+				</div>
+				<SearchField
+					value={search}
+					onChange={setSearch}
+					placeholder="搜索名称或邮箱地址…"
+				/>
+			</div>
+			{(mailboxes.error || config.error) && (
+				<Notice error>{(mailboxes.error || config.error)?.message}</Notice>
+			)}
+			{mailboxes.isLoading ? (
+				<div className="mailbox-grid" aria-label="正在加载邮箱">
+					{[1, 2].map((i) => (
+						<div
+							key={i}
+							className="portal-panel h-56 animate-pulse bg-kumo-recessed"
+						/>
+					))}
+				</div>
+			) : !filtered.length ? (
+				<div className="portal-panel">
+					<EmptyState
+						title={search ? "没有找到匹配的邮箱" : "你的工作空间已准备好"}
+						description={
+							search
+								? "试试其他名称或邮箱地址。"
+								: config.data?.canCreate
+									? "创建第一个邮箱，或联系管理员为你分配。"
+									: "管理员分配邮箱后，就会在这里显示。"
+						}
+					/>
+				</div>
+			) : (
+				<div className="mailbox-grid">
+					{filtered.map((m) => {
+						const aliases =
+							m.addresses?.filter((a) => a.active && a.address !== m.email) ||
+							[];
+						return (
+							<Link
 								key={m.id}
-								className="rounded-xl border border-kumo-line bg-kumo-base p-5"
+								to={`/mailbox/${encodeURIComponent(m.id)}`}
+								className="mailbox-card group"
 							>
-								<div className="flex items-center justify-between gap-3">
-									<Link
-										to={`/mailbox/${encodeURIComponent(m.id)}`}
-										className="min-w-0"
-									>
-										<h2 className="font-semibold">
-											{m.name}
-											{m.unreadCount ? ` · ${m.unreadCount} 未读` : ""}
-										</h2>
-										<p className="text-sm">{m.email}</p>
-									</Link>
-									<span className="text-xs text-kumo-subtle">
-										{m.role === "admin"
-											? "管理员"
-											: m.role === "viewer"
-												? "只读"
-												: "可编辑"}
-										{m.ownerId && m.ownerId !== me?.id ? " · 共享邮箱" : ""}
+								<div className="flex items-center justify-between">
+									<span className="mailbox-card-icon">
+										<EnvelopeSimpleIcon size={23} />
+									</span>
+									{!!m.unreadCount ? (
+										<StatusPill tone="amber">{m.unreadCount} 封未读</StatusPill>
+									) : (
+										<StatusPill>暂无未读</StatusPill>
+									)}
+								</div>
+								<h2>{m.name}</h2>
+								<p className="mailbox-card-address">{m.email}</p>
+								<div className="mt-3 flex items-center gap-2">
+									<StatusPill>
+										{m.role === "viewer"
+											? "只读"
+											: m.role === "admin"
+												? "管理员"
+												: "可收发"}
+									</StatusPill>
+									{!!aliases.length && (
+										<span
+											className="text-[11px] text-kumo-subtle"
+											title={aliases.map((a) => a.address).join("\n")}
+										>
+											另有 {aliases.length} 个收发地址
+										</span>
+									)}
+								</div>
+								<div className="mailbox-card-footer">
+									<span>
+										{m.ownerId && m.ownerId !== me?.id
+											? "共享访问"
+											: "团队邮箱"}
+									</span>
+									<span className="inline-flex items-center gap-2 text-kumo-strong">
+										进入邮箱
+										<ArrowRightIcon
+											size={14}
+											className="group-hover:translate-x-0.5 transition-transform"
+										/>
 									</span>
 								</div>
-								<p className="mt-2 break-all text-xs text-kumo-subtle">
-									{m.addresses
-										?.filter((a) => a.active)
-										.map((a) => a.address)
-										.join(" · ")}
-								</p>
-								{me?.role === "admin" && (
-									<Button
-										variant="ghost"
-										size="sm"
-										className="mt-3"
-										onClick={async () => {
-											if (
-												!window.confirm(
-													"停用后停止收信并撤销成员访问，历史邮件保留。继续？",
-												)
-											)
-												return;
-											try {
-												await api.deleteMailbox(m.id);
-												await qc.invalidateQueries({ queryKey: ["mailboxes"] });
-											} catch (e) {
-												setError(String(e));
-											}
-										}}
-									>
-										停用邮箱
-									</Button>
-								)}
-							</div>
-						))}
-					</div>
-				)}
-				{error && !open && (
-					<p role="alert" className="text-kumo-error">
-						{error}
-					</p>
-				)}
-				<Dialog.Root open={open} onOpenChange={setOpen}>
-					<Dialog size="sm" className="p-6">
-						<Dialog.Title>创建邮箱</Dialog.Title>
-						<form onSubmit={create} className="mt-4 space-y-4">
-							{error && (
-								<p role="alert" className="text-kumo-error">
-									{error}
-								</p>
-							)}
-							<Input
-								label="邮箱名称"
-								placeholder="例如：销售邮箱"
-								maxLength={80}
-								value={name}
-								onChange={(e) => setName(e.target.value)}
-							/>
-							<Input
-								label="邮箱前缀"
-								placeholder="sales"
-								maxLength={64}
-								pattern="[a-z0-9][a-z0-9._\-]*"
-								value={prefix}
-								onChange={(e) => setPrefix(e.target.value.toLowerCase())}
-								required
-							/>
-							<fieldset className="space-y-2">
-								<legend className="mb-2 text-sm font-medium">
-									关联域名（可多选，同一个邮箱共用邮件）
-								</legend>
-								{config.data?.domains.map((d) => (
-									<label key={d} className="flex gap-2 text-sm">
-										<input
-											type="checkbox"
-											checked={domains.includes(d)}
-											onChange={() => toggle(d)}
-										/>
-										{prefix || "前缀"}@{d}
-									</label>
-								))}
-								{!config.data?.domains.length && (
-									<p className="text-sm">没有可用域名，请联系管理员。</p>
-								)}
-							</fieldset>
-							<label className="block text-sm">
-								默认地址
-								<select
-									className="mt-1 w-full rounded border border-kumo-line bg-kumo-base p-2"
-									value={domains.includes(primary) ? primary : domains[0] || ""}
-									onChange={(e) => setPrimary(e.target.value)}
-								>
-									{domains.map((d) => (
-										<option key={d} value={d}>
-											{prefix || "前缀"}@{d}
-										</option>
-									))}
-								</select>
-							</label>
-							{me?.role === "admin" && (
-								<label className="block text-sm">
-									分配给用户
-									<select
-										className="mt-1 w-full rounded border border-kumo-line bg-kumo-base p-2"
-										value={owner}
-										onChange={(e) => setOwner(e.target.value)}
-									>
-										<option value="">自己</option>
-										{users.data
-											?.filter(
-												(u) =>
-													u.active && u.status !== "pending" && u.id !== me.id,
-											)
-											.map((u) => (
-												<option key={u.id} value={u.id}>
-													{u.email}
-												</option>
-											))}
-									</select>
-								</label>
-							)}
-							<p className="text-xs text-kumo-subtle">
-								最多关联 20
-								个地址。地址冲突时全部取消创建；域名需完成配置后才能收发信。
-							</p>
-							<div className="flex justify-end gap-2">
-								<Button type="button" onClick={() => setOpen(false)}>
-									取消
-								</Button>
-								<Button
-									type="submit"
-									variant="primary"
-									disabled={busy || !domains.length}
-								>
-									{busy ? "创建中…" : "创建"}
-								</Button>
-							</div>
-						</form>
-					</Dialog>
-				</Dialog.Root>
-			</div>
-		</main>
+							</Link>
+						);
+					})}
+				</div>
+			)}
+			<CreateMailboxDialog open={open} onOpenChange={setOpen} />
+		</PortalShell>
 	);
 }

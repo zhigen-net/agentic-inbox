@@ -2,10 +2,20 @@
 // Licensed under the Apache 2.0 license found in the LICENSE file or at:
 //     https://opensource.org/licenses/Apache-2.0
 
-import { Badge, Button, Dialog, Input, Tooltip } from "@cloudflare/kumo";
+import {
+	Badge,
+	Button,
+	Dialog,
+	DropdownMenu,
+	Input,
+	Tooltip,
+} from "@cloudflare/kumo";
 import {
 	ArchiveIcon,
 	CaretLeftIcon,
+	CaretUpDownIcon,
+	CheckIcon,
+	SquaresFourIcon,
 	FileIcon,
 	FolderIcon,
 	PaperPlaneTiltIcon,
@@ -19,6 +29,7 @@ import { NavLink, useNavigate, useParams } from "react-router";
 import { Folders, SYSTEM_FOLDER_IDS } from "shared/folders";
 import { useCreateFolder, useFolders } from "~/queries/folders";
 import { useMailboxes, useMailbox } from "~/queries/mailboxes";
+import AccountMenu from "~/components/AccountMenu";
 import { useUIStore } from "~/hooks/useUIStore";
 
 const FOLDER_ICONS: Record<string, React.ReactNode> = {
@@ -140,37 +151,61 @@ export default function Sidebar() {
 					<CaretLeftIcon size={14} />
 					<span>Mailboxes</span>
 				</button>
-				<div className="px-1">
-					<div className="text-base font-semibold text-kumo-default truncate">
-						{displayName}
-					</div>
-					<div className="text-sm text-kumo-subtle truncate mt-0.5">
-						{currentMailbox?.email || mailboxId}
-					</div>
-				</div>
+				<DropdownMenu>
+					<DropdownMenu.Trigger
+						className="mailbox-identity-trigger"
+						aria-label="切换邮箱"
+					>
+						<span className="min-w-0 flex-1">
+							<span className="block text-base font-semibold text-kumo-default truncate">
+								{displayName}
+							</span>
+							<span className="block text-sm text-kumo-subtle truncate mt-0.5">
+								{currentMailbox?.email || mailboxId}
+							</span>
+						</span>
+						<CaretUpDownIcon size={15} className="shrink-0 text-kumo-subtle" />
+					</DropdownMenu.Trigger>
+					<DropdownMenu.Content
+						style={{ zIndex: 60 }}
+						align="start"
+						className="w-72 max-h-[70dvh] overflow-y-auto"
+					>
+						<DropdownMenu.Group>
+							<DropdownMenu.Label>切换邮箱</DropdownMenu.Label>
+							{availableMailboxes.map((m) => (
+								<DropdownMenu.Item
+									key={m.id}
+									onClick={() => {
+										navigate(`/mailbox/${encodeURIComponent(m.id)}`);
+										closeSidebar();
+									}}
+								>
+									<span className="flex w-full items-center gap-3 py-1">
+										<span className="min-w-0 flex-1">
+											<span className="block truncate text-sm">{m.name}</span>
+											<span className="block truncate text-xs text-kumo-subtle mt-0.5">
+												{m.email}
+											</span>
+										</span>
+										{!!m.unreadCount && (
+											<Badge variant="secondary">{m.unreadCount}</Badge>
+										)}
+										{m.id === mailboxId && (
+											<CheckIcon size={15} className="shrink-0" />
+										)}
+									</span>
+								</DropdownMenu.Item>
+							))}
+							<DropdownMenu.Separator />
+							<DropdownMenu.LinkItem href="/" icon={SquaresFourIcon}>
+								查看全部邮箱
+							</DropdownMenu.LinkItem>
+						</DropdownMenu.Group>
+					</DropdownMenu.Content>
+				</DropdownMenu>
 			</div>
 
-			<div className="px-4 py-2">
-				<label className="text-xs text-kumo-subtle">
-					切换邮箱
-					<select
-						aria-label="切换邮箱"
-						className="mt-1 w-full rounded border border-kumo-line bg-kumo-base p-2 text-sm text-kumo-default"
-						value={mailboxId || ""}
-						onChange={(e) => {
-							navigate(`/mailbox/${encodeURIComponent(e.target.value)}`);
-							closeSidebar();
-						}}
-					>
-						{availableMailboxes.map((m) => (
-							<option key={m.id} value={m.id}>
-								{m.name} · {m.email}
-								{m.unreadCount ? ` · ${m.unreadCount} 未读` : ""}
-							</option>
-						))}
-					</select>
-				</label>
-			</div>
 			{/* Compose */}
 			{canWrite && (
 				<div className="px-3 py-3">
@@ -253,6 +288,10 @@ export default function Sidebar() {
 					</div>
 				)}
 			</nav>
+
+			<div className="mx-3 mb-3 mt-3 border-t border-kumo-line pt-2">
+				<AccountMenu minimal />
+			</div>
 
 			{/* Create folder dialog */}
 			<Dialog.Root
