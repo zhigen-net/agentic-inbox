@@ -66,7 +66,7 @@ export default function RichTextEditor({
 			// Place cursor at the start of the document (above quoted text)
 			const rafId = requestAnimationFrame(() => {
 				if (!editor.isDestroyed) {
-					editor.commands.focus('start');
+					editor.commands.focus("start");
 				}
 			});
 			return () => cancelAnimationFrame(rafId);
@@ -231,8 +231,11 @@ export default function RichTextEditor({
 			</div>
 
 			{/* Editor content */}
-			<div className="flex-1 overflow-y-auto">
-				<EditorContent editor={editor} />
+			<div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+				<EditorContent
+					editor={editor}
+					className="flex flex-1 flex-col [&>.tiptap]:flex-1"
+				/>
 			</div>
 		</div>
 	);
