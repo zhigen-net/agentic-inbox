@@ -13,7 +13,7 @@ export default {
   const payload=[timestamp,id,message.from,message.to,hash].join('\\n');
   const key=await crypto.subtle.importKey('raw',enc.encode(env.BRIDGE_KEY),{name:'HMAC',hash:'SHA-256'},false,['sign']);
   const signature=hex(await crypto.subtle.sign('HMAC',key,enc.encode(payload)));
-  const r=await fetch(env.INBOX_ORIGIN+'/ingress/email/'+env.INBOX_DOMAIN,{method:'POST',redirect:'error',headers:{'Content-Type':'application/octet-stream','X-Inbox-Time':timestamp,'X-Inbox-Id':id,'X-Inbox-From':message.from,'X-Inbox-To':message.to,'X-Inbox-Signature':signature},body:raw,signal:AbortSignal.timeout(30000)});
+  const r=await fetch(env.INBOX_ORIGIN+'/ingress/email/'+env.INBOX_DOMAIN,{method:'POST',redirect:'manual',headers:{'Content-Type':'application/octet-stream','X-Inbox-Time':timestamp,'X-Inbox-Id':id,'X-Inbox-From':message.from,'X-Inbox-To':message.to,'X-Inbox-Signature':signature},body:raw,signal:AbortSignal.timeout(30000)});
   if(!r.ok)throw new Error('Inbox relay failed: HTTP '+r.status);
  },
  fetch(){return new Response('Email relay only',{status:404});}
