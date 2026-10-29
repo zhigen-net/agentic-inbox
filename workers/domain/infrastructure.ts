@@ -107,7 +107,7 @@ export async function provider(
 				: body instanceof FormData
 					? body
 					: JSON.stringify(body),
-		redirect: "error",
+		redirect: "manual",
 		signal: AbortSignal.timeout(15000),
 	});
 	if (!response.ok) {

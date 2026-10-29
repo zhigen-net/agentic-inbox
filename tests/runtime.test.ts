@@ -303,3 +303,41 @@ test(
 		}
 	},
 );
+
+test("workerd: provider requests work at the edge and refuse redirects without forwarding credentials", async () => {
+	const compiled = await build({
+		stdin: {
+			contents: `import {provider, seal} from './workers/domain/infrastructure.ts';
+				export default {async fetch(request) {
+					const env = {DOMAIN_CONFIG_KEY: 'test-only-provider-key'.repeat(3)};
+					const c = {id:'test', provider:'cloudflare', credential:await seal(env, 'test-token', 'test')};
+					try {return Response.json(await provider(env, c, new URL(request.url).pathname))}
+					catch(e) {return Response.json({status:e.status}, {status:502})}
+				}};`,
+			resolveDir: process.cwd(),
+		},
+		bundle: true, write: false, format: "esm", platform: "neutral",
+		conditions: ["workerd", "worker", "browser"],
+		external: ["cloudflare:*", "node:*"],
+	});
+	const requests: string[] = [];
+	const mf = new Miniflare({
+		modules: true, script: compiled.outputFiles[0].text,
+		outboundService: async (request) => {
+			requests.push(request.url);
+			assert.equal(request.headers.get("Authorization"), "Bearer test-token");
+			if (new URL(request.url).pathname.endsWith("/redirect"))
+				return new Response(null, {status:302, headers:{Location:'https://untrusted.test/steal'}});
+			return Response.json({success:true, result:{id:'verified-zone'}});
+		},
+	});
+	try {
+		const ok = await mf.dispatchFetch("https://local/zones");
+		assert.equal(ok.status, 200);
+		assert.deepEqual(await ok.json(), {id:'verified-zone'});
+		const redirected = await mf.dispatchFetch("https://local/redirect");
+		assert.equal(redirected.status, 502);
+		assert.deepEqual(await redirected.json(), {status:302});
+		assert.deepEqual(requests, ['https://api.cloudflare.com/client/v4/zones', 'https://api.cloudflare.com/client/v4/redirect']);
+	} finally { await mf.dispose(); }
+});
