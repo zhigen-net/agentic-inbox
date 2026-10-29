@@ -81,9 +81,7 @@ export default function DomainWizard({
 					<Dialog.Title className="text-lg font-semibold">
 						{d.name}
 					</Dialog.Title>
-					<p className="portal-section-help">
-						检查配置、连接服务和验证收发。系统开关与真实状态分别显示。
-					</p>
+					<p className="portal-section-help">检查异常、配置接入、验证收发。</p>
 				</div>
 				<div className="px-7 pt-5">
 					<nav className="portal-tabs !mb-0" aria-label="域名配置步骤">
@@ -199,15 +197,6 @@ export default function DomainWizard({
 												))}
 										</select>
 									</label>
-									<Input
-										label="Zone ID（选填，根域名自动查找；子域名可指定父 Zone）"
-										value={zone}
-										pattern="[a-f0-9]{32}"
-										onChange={(e) => {
-											setZone(e.target.value.trim());
-											invalidatePlan();
-										}}
-									/>
 									{cross && (
 										<Notice>
 											此域名在其他账户。保存后到“配置向导”部署接入
@@ -245,16 +234,36 @@ export default function DomainWizard({
 									))}
 								</select>
 							</label>
-							<Input
-								label="DKIM 选择器（选填，可用英文逗号分隔）"
-								placeholder="从发信服务复制，例如 selector1"
-								value={selector}
-								pattern="([a-zA-Z0-9_-]+(,[a-zA-Z0-9_-]+)*)?"
-								onChange={(e) => {
-									setSelector(e.target.value);
-									invalidatePlan();
-								}}
-							/>
+							<details className="compact-health-group">
+								<summary>
+									高级 DNS 选项{zone || selector ? " · 已设置" : ""}
+								</summary>
+								<div className="space-y-4 mt-4">
+									{mode === "cloudflare" && (
+										<>
+											<Input
+												label="Zone ID（选填，根域名自动查找；子域名可指定父 Zone）"
+												value={zone}
+												pattern="[a-f0-9]{32}"
+												onChange={(e) => {
+													setZone(e.target.value.trim());
+													invalidatePlan();
+												}}
+											/>
+										</>
+									)}
+									<Input
+										label="DKIM 选择器（选填，可用英文逗号分隔）"
+										placeholder="从发信服务复制，例如 selector1"
+										value={selector}
+										pattern="([a-zA-Z0-9_-]+(,[a-zA-Z0-9_-]+)*)?"
+										onChange={(e) => {
+											setSelector(e.target.value);
+											invalidatePlan();
+										}}
+									/>
+								</div>
+							</details>
 							<p className="portal-section-help">
 								账户连接请在域名管理页的“服务连接”中添加。令牌更新后需要重新检测。先保存接入设置，再进行自动配置。
 							</p>
