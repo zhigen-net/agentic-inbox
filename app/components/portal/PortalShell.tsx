@@ -25,11 +25,32 @@ export function Brand() {
 export default function PortalShell({
 	children,
 	admin = false,
+	focused = false,
 }: {
 	children: ReactNode;
 	admin?: boolean;
+	focused?: boolean;
 }) {
 	const { data: me } = useMe();
+	if (focused)
+		return (
+			<div className="mailbox-workspace">
+				<header className="mailbox-workspace-header">
+					<Brand />
+					<nav aria-label="工作空间导航" className="mailbox-workspace-nav">
+						<NavLink to="/" end>
+							我的邮箱
+						</NavLink>
+						{me?.role === "admin" && <NavLink to="/team">管理后台</NavLink>}
+					</nav>
+					<div className="mailbox-workspace-account">
+						<AccountMenu minimal />
+					</div>
+				</header>
+				<main className="mailbox-workspace-content">{children}</main>
+			</div>
+		);
+
 	return (
 		<div className="portal-shell">
 			<aside className="portal-sidebar">
