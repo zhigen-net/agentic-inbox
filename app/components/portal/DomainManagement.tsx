@@ -1,5 +1,5 @@
 import { Button, Dialog, Input } from "@cloudflare/kumo";
-import { GlobeIcon, PlusIcon, ArrowClockwiseIcon } from "@phosphor-icons/react";
+import { GlobeIcon, PlusIcon } from "@phosphor-icons/react";
 import { useState } from "react";
 import api, { type Domain } from "~/services/api";
 import type { RunAction } from "~/routes/team";
@@ -57,7 +57,7 @@ export default function DomainManagement({
 					</Button>
 				</div>
 			</div>
-			<div className="space-y-4">
+			<div className="space-y-2">
 				{list.map((d) => (
 					<DomainCard
 						key={`${d.name}-${d.enabled}-${d.receive_enabled}-${d.send_enabled}-${d.checked_at}`}
@@ -182,106 +182,95 @@ function DomainCard({
 	} catch {
 		/* An obsolete report must not break the management page. */
 	}
+	const attention =
+		health?.checks.filter((x) =>
+			["missing", "permission", "error", "warning"].includes(x.state),
+		).length || 0;
+	const unknown =
+		health?.checks.filter((x) => x.state === "unknown").length || 0;
 	return (
-		<section className="portal-panel">
-			<div className="portal-panel-heading">
-				<div className="flex items-center gap-3">
-					<span className="portal-stat-icon">
-						<GlobeIcon size={21} />
-					</span>
-					<div>
-						<h2>{d.name}</h2>
-						<p>
-							{d.checked_at
-								? d.mx_verified
-									? "历史检测发现 Cloudflare MX（尚不代表实际收发通过）"
-									: "尚未检测到 Cloudflare MX 记录"
-								: "尚未进行完整配置检测"}
+		<section className="portal-panel compact-domain-card">
+			<div className="compact-domain-row">
+				<div className="flex items-center gap-3 min-w-0">
+					<GlobeIcon size={20} className="text-kumo-subtle shrink-0" />
+					<div className="min-w-0">
+						<div className="flex items-center flex-wrap gap-2">
+							<h2 className="text-sm font-semibold break-all">{d.name}</h2>
+							<StatusPill tone={d.enabled ? "green" : "neutral"}>
+								{d.enabled ? "已启用" : "已停用"}
+							</StatusPill>
+						</div>
+						<p className="text-[11px] text-kumo-subtle mt-1">
+							收信{d.receive_enabled ? "允许" : "关闭"} · 发信
+							{d.send_enabled ? "允许" : "关闭"}
+							<span className="mx-2">·</span>
+							{health
+								? `检测于 ${new Date(health.checkedAt).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}`
+								: "尚未完整检测"}
 						</p>
 					</div>
 				</div>
-				<StatusPill tone={d.enabled ? "green" : "neutral"}>
-					{d.enabled ? "系统已启用" : "系统已停用"}
-				</StatusPill>
-			</div>
-			<div className="portal-panel-body">
-				<div className="flex flex-wrap items-center justify-between gap-3 mb-5">
-					<p className="text-xs text-kumo-subtle">
-						{health
-							? `上次完整检测：${new Date(health.checkedAt).toLocaleString("zh-CN")} · ${health.checks.filter((x) => x.state !== "passed").length} 项待配置/核对`
-							: "尚未完整检测，不能据开关判断收发正常"}
-					</p>
-					<Button size="sm" variant="primary" onClick={inspect}>
+				<div className="compact-domain-actions">
+					{health ? (
+						<span className="text-xs text-kumo-subtle">
+							{attention
+								? `${attention} 项待处理`
+								: unknown
+									? "暂无已确认异常"
+									: "配置检查已通过"}
+							{unknown ? ` · ${unknown} 项未验证` : ""}
+						</span>
+					) : (
+						<span className="text-xs text-kumo-subtle">状态待检查</span>
+					)}
+					<Button variant="secondary" size="sm" onClick={inspect}>
 						检查与配置
 					</Button>
 				</div>
-				<h3 className="text-xs font-medium mb-3">系统使用开关</h3>
-				<div className="grid sm:grid-cols-3 gap-4">
-					<label className="portal-checkbox">
-						<input
-							type="checkbox"
-							checked={enabled}
-							onChange={(e) => setEnabled(e.target.checked)}
-							disabled={busy}
-						/>
-						启用此域名
-					</label>
-					<label className="portal-checkbox">
-						<input
-							type="checkbox"
-							checked={receive}
-							onChange={(e) => setReceive(e.target.checked)}
-							disabled={busy}
-						/>
-						允许收信
-					</label>
-					<label className="portal-checkbox">
-						<input
-							type="checkbox"
-							checked={send}
-							onChange={(e) => setSend(e.target.checked)}
-							disabled={busy}
-						/>
-						允许发信
-					</label>
-				</div>
-				<div className="flex flex-wrap gap-3 justify-between items-center border-t border-kumo-line pt-4 mt-5">
-					<p className="portal-section-help max-w-md">
-						这些开关仅控制系统是否允许使用，不会配置 DNS 或证明实际收发正常。
-					</p>
-					<div className="flex gap-2">
-						<Button
-							size="sm"
-							variant="secondary"
-							icon={<ArrowClockwiseIcon size={14} />}
-							disabled={busy}
-							onClick={() =>
-								void run(() => api.domainHealth(d.name), "完整检测已更新")
-							}
-						>
-							完整检测
-						</Button>
-						<Button
-							size="sm"
-							variant="primary"
-							disabled={busy || !dirty}
-							onClick={() =>
-								void run(
-									() =>
-										api.updateDomain(d.name, {
-											enabled,
-											receiveEnabled: receive,
-											sendEnabled: send,
-										}),
-									"域名设置已保存",
-								)
-							}
-						>
-							保存开关
-						</Button>
-					</div>
-				</div>
 			</div>
+			<details className="compact-domain-switches">
+				<summary>使用开关{dirty ? " · 未保存" : ""}</summary>
+				<div className="flex flex-wrap items-center gap-x-6 gap-y-3 mt-3">
+					{[
+						[enabled, setEnabled, "启用域名"],
+						[receive, setReceive, "允许收信"],
+						[send, setSend, "允许发信"],
+					].map(([value, set, label]) => (
+						<label className="portal-checkbox" key={label as string}>
+							<input
+								type="checkbox"
+								checked={value as boolean}
+								disabled={busy}
+								onChange={(e) =>
+									(set as (v: boolean) => void)(e.target.checked)
+								}
+							/>
+							{label as string}
+						</label>
+					))}
+					<Button
+						size="sm"
+						variant="primary"
+						disabled={busy || !dirty}
+						onClick={() =>
+							void run(
+								() =>
+									api.updateDomain(d.name, {
+										enabled,
+										receiveEnabled: receive,
+										sendEnabled: send,
+									}),
+								"域名开关已保存",
+							)
+						}
+					>
+						保存开关
+					</Button>
+				</div>
+				<p className="portal-section-help mt-2">
+					仅控制系统使用，不代表 DNS 或实际收发已验证。
+				</p>
+			</details>
 		</section>
 	);
 }
